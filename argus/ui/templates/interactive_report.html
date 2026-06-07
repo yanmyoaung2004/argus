@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }}</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0a0f1a;
+  color: #e2e8f0;
+  line-height: 1.6;
+}
+.container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+
+.header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;
+}
+.header-left h1 {
+  font-size: 1.5rem; font-weight: 700; color: #f1f5f9;
+  letter-spacing: -0.02em; margin-bottom: 0.25rem;
+}
+.header-left .subtitle {
+  font-size: 0.85rem; color: #64748b; font-weight: 400;
+}
+.header-right {
+  display: flex; gap: 0.5rem; align-items: center;
+}
+.badge {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.35rem 0.75rem; border-radius: 9999px;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.01em;
+}
+.badge-premium { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+.badge-outline { border: 1px solid #334155; color: #94a3b8; }
+
+.metrics {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem; margin-bottom: 2rem;
+}
+.metric-card {
+  background: linear-gradient(135deg, #131a2b, #1a2332);
+  border-radius: 12px; border: 1px solid #1e293b;
+  padding: 1.25rem; position: relative; overflow: hidden;
+}
+.metric-card::before {
+  content: ''; position: absolute; top: 0; left: 0;
+  width: 100%; height: 3px;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa);
+}
+.metric-value { font-size: 1.75rem; font-weight: 800; color: #f1f5f9; letter-spacing: -0.02em; }
+.metric-label { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.graph-card {
+  background: #0f172a; border-radius: 16px; border: 1px solid #1e293b;
+  margin-bottom: 2rem; overflow: hidden;
+}
+.graph-card .graph-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1rem 1.5rem; border-bottom: 1px solid #1e293b;
+}
+.graph-card h2 { font-size: 1rem; font-weight: 600; color: #f1f5f9; }
+.graph-card .graph-hint { font-size: 0.75rem; color: #475569; }
+.graph-container { width: 100%; height: 600px; }
+
+.research-title {
+  background: linear-gradient(135deg, #1e293b, #131a2b);
+  border-radius: 12px; border: 1px solid #334155;
+  padding: 1.5rem; margin-bottom: 2rem;
+}
+.research-title .label {
+  font-size: 0.7rem; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem;
+}
+.research-title .title-text {
+  font-size: 1.8rem; font-weight: 800; color: #f1f5f9;
+  letter-spacing: -0.03em; line-height: 1.2;
+}
+.section-stack { display: flex; flex-direction: column; gap: 1.5rem; margin-bottom: 2rem; }
+
+.section-card {
+  background: linear-gradient(135deg, #131a2b, #1a2332);
+  border-radius: 16px; border: 1px solid #1e293b; padding: 1.5rem;
+}
+.section-card h2 {
+  font-size: 0.95rem; font-weight: 600; color: #f1f5f9;
+  margin-bottom: 1rem; padding-bottom: 0.75rem;
+  border-bottom: 1px solid #1e293b;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.section-card h2 .count {
+  font-size: 0.8rem; font-weight: 500; color: #64748b;
+  background: #1e293b; padding: 0.15rem 0.5rem; border-radius: 9999px;
+}
+
+.entity-grid { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.entity-chip {
+  background: #1e293b; border: 1px solid #334155;
+  border-radius: 8px; padding: 0.6rem 0.9rem;
+  flex: 1 1 calc(50% - 0.3rem); min-width: 180px;
+  transition: border-color 0.15s, background 0.15s; cursor: default;
+}
+.entity-chip:hover { border-color: #6366f1; background: #1e2a3d; }
+.entity-chip .chip-name { font-size: 0.85rem; font-weight: 600; color: #e2e8f0; }
+.entity-chip .chip-meta { font-size: 0.7rem; color: #64748b; margin-top: 0.2rem; display: flex; gap: 0.75rem; }
+.entity-chip .chip-desc { font-size: 0.75rem; color: #94a3b8; margin-top: 0.3rem; }
+
+.claim-item {
+  background: #1e293b; border: 1px solid #334155;
+  border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem;
+  cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.claim-item:hover { border-color: #6366f1; background: #1e2a3d; }
+.claim-item .claim-head { display: flex; align-items: flex-start; gap: 0.6rem; }
+.claim-item .conf-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; margin-top: 0.4rem; }
+.conf-high { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4); }
+.conf-medium { background: #eab308; box-shadow: 0 0 6px rgba(234,179,8,0.4); }
+.conf-low { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+.claim-item .statement { font-size: 0.85rem; font-weight: 500; color: #e2e8f0; }
+.claim-item .meta-row { font-size: 0.72rem; color: #64748b; margin-top: 0.4rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+.claim-item .meta-row span { display: inline-flex; align-items: center; gap: 0.25rem; }
+.claim-detail {
+  margin-top: 0.75rem; padding: 0.75rem; background: #131a2b;
+  border-radius: 8px; font-size: 0.8rem; display: none; border: 1px solid #1e293b;
+}
+.claim-item.open .claim-detail { display: block; }
+.claim-detail strong { color: #94a3b8; font-weight: 600; }
+.source-list { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+.source-list li { padding: 0.3rem 0; }
+.source-list a { color: #818cf8; text-decoration: none; font-size: 0.78rem; word-break: break-all; }
+.source-list a:hover { color: #a78bfa; text-decoration: underline; }
+
+.source-card {
+  background: #1e293b; border: 1px solid #334155;
+  border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem;
+}
+.source-card .src-title { font-size: 0.82rem; font-weight: 500; color: #e2e8f0; }
+.source-card .src-url { font-size: 0.72rem; word-break: break-all; }
+.source-card .src-url a { color: #818cf8; text-decoration: none; }
+.source-card .src-url a:hover { text-decoration: underline; }
+.source-card .src-cred { font-size: 0.7rem; color: #64748b; margin-top: 0.15rem; }
+
+.no-data { color: #475569; font-size: 0.85rem; text-align: center; padding: 2rem 0; }
+
+.cost-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.cost-table th, .cost-table td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid #1e293b; }
+.cost-table th { font-weight: 600; color: #64748b; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
+.cost-table td { color: #e2e8f0; }
+.cost-table tfoot td { border-bottom: none; padding-top: 0.75rem; }
+
+.overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  z-index: 999; display: none;
+}
+.overlay.open { display: block; }
+.node-detail {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, #1a2332, #131a2b);
+  border-radius: 16px; border: 1px solid #334155;
+  padding: 1.5rem; z-index: 1000; max-width: 420px; width: 90%;
+  max-height: 80vh; overflow-y: auto; display: none;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.node-detail.open { display: block; }
+.node-detail h3 { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; margin-bottom: 0.75rem; }
+.node-detail .detail-body { font-size: 0.85rem; color: #94a3b8; }
+.node-detail .close-btn {
+  position: absolute; top: 0.75rem; right: 0.75rem;
+  background: none; border: none; color: #64748b; font-size: 1.25rem;
+  cursor: pointer; padding: 0.25rem; line-height: 1;
+}
+.node-detail .close-btn:hover { color: #f1f5f9; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-left">
+      <h1>{{ title }}</h1>
+      <div class="subtitle">Generated {{ generated_at }}</div>
+    </div>
+    <div class="header-right">
+      <span class="badge badge-premium">&#9670; Argus Report</span>
+      <span class="badge badge-outline">{{ metrics.entities }} entities &middot; {{ metrics.claims }} claims &middot; {{ metrics.sources }} sources</span>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric-card">
+      <div class="metric-value">{{ metrics.entities }}</div>
+      <div class="metric-label">Entities</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">{{ metrics.claims }}</div>
+      <div class="metric-label">Claims</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">{{ metrics.sources }}</div>
+      <div class="metric-label">Sources</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">{{ "%.0f"|format(metrics.avg_confidence * 100) }}%</div>
+      <div class="metric-label">Avg Confidence</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">${{ "%.4f"|format(metrics.total_cost) }}</div>
+      <div class="metric-label">Total Cost</div>
+    </div>
+  </div>
+
+  <div class="research-title">
+    <div class="label">Research Topic</div>
+    <div class="title-text">{{ title }}</div>
+  </div>
+
+  <div class="graph-card">
+    <div class="graph-header">
+      <h2>Knowledge Graph</h2>
+      <span class="graph-hint">&#9881; Drag nodes &middot; Scroll to zoom &middot; Click a node for details</span>
+    </div>
+    <div class="graph-container" id="graph"></div>
+  </div>
+
+  <div class="section-stack">
+    <div class="section-card">
+      <h2>Entities <span class="count">{{ entities|length }}</span></h2>
+      {% if entities %}
+      <div class="entity-grid">
+        {% for e in entities %}
+        <div class="entity-chip">
+          <div class="chip-name">{{ e[1] }}</div>
+          <div class="chip-meta">
+            <span>{{ e[2] }}</span>
+            <span>Conf: {{ "%.0f"|format(e[4] * 100) }}%</span>
+          </div>
+          {% if e[3] %}<div class="chip-desc">{{ e[3][:150] }}{% if e[3]|length > 150 %}...{% endif %}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<div class="no-data">No entities discovered</div>{% endif %}
+    </div>
+
+    <div class="section-card">
+      <h2>Claims <span class="count">{{ claims|length }}</span></h2>
+      {% if claims %}
+      <div>
+        {% for claim in claims %}
+        <div class="claim-item" onclick="this.classList.toggle('open')">
+          <div class="claim-head">
+            <div class="conf-dot {% if claim.confidence >= 0.8 %}conf-high{% elif claim.confidence >= 0.5 %}conf-medium{% else %}conf-low{% endif %}"></div>
+            <div>
+              <div class="statement">{{ claim.statement }}</div>
+              <div class="meta-row">
+                {% if claim.entity_name %}<span>&#9679; {{ claim.entity_name }}</span>{% endif %}
+                {% if claim.attribute %}<span>&#8594; {{ claim.attribute }}</span>{% endif %}
+                <span>Conf: {{ "%.0f"|format(claim.confidence * 100) }}%</span>
+                <span>{{ claim.sources|length }} source{% if claim.sources|length != 1 %}s{% endif %}</span>
+              </div>
+            </div>
+          </div>
+          <div class="claim-detail">
+            {% if claim.sources %}
+            <strong>Sources</strong>
+            <ul class="source-list">
+              {% for source in claim.sources %}
+              <li>
+                <div class="source-card">
+                  <div class="src-title">{{ source.title or "Untitled" }}</div>
+                  <div class="src-url"><a href="{{ source.url }}" target="_blank" rel="noopener">{{ source.url }}</a></div>
+                  {% if source.credibility is defined %}<div class="src-cred">Credibility: {{ "%.0f"|format(source.credibility * 100) }}%</div>{% endif %}
+                </div>
+              </li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+            {% if claim.source_urls %}
+            <div style="margin-top:0.5rem;">
+              <strong>All source URLs</strong>
+              <ul class="source-list">
+                {% for url in claim.source_urls %}
+                <li><a href="{{ url }}" target="_blank" rel="noopener">{{ url }}</a></li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<div class="no-data">No claims extracted</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="graph-card" style="margin-bottom:1.5rem;">
+    <div class="graph-header">
+      <h2>All Sources ({{ sources|length }})</h2>
+    </div>
+    <div style="padding:1rem 1.5rem;">
+      {% if sources %}
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:0.6rem;">
+        {% for s in sources %}
+        <div class="source-card">
+          <div class="src-title">{{ s[1] or "Untitled" }}</div>
+          <div class="src-url"><a href="{{ s[0] }}" target="_blank" rel="noopener">{{ s[0] }}</a></div>
+          <div class="src-cred">Credibility: {{ "%.0f"|format(s[2] * 100) }}%</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<div class="no-data">No sources referenced</div>{% endif %}
+    </div>
+  </div>
+
+  {% if cost_report %}
+  <div class="graph-card">
+    <div class="graph-header">
+      <h2>Cost Breakdown</h2>
+    </div>
+    <div style="padding:1rem 1.5rem;">
+      <table class="cost-table">
+        <thead>
+          <tr><th>Category</th><th>Amount</th></tr>
+        </thead>
+        <tbody>
+          {% for category, amount in cost_report.breakdown|dictsort(by='value', reverse=True) %}
+          <tr><td>{{ category }}</td><td>${{ "%.4f"|format(amount) }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr><td><strong>Total</strong></td><td><strong>${{ "%.4f"|format(cost_report.total_cost) }}</strong></td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="overlay" onclick="closeNodeDetail()"></div>
+<div class="node-detail" id="node-detail">
+  <button class="close-btn" onclick="closeNodeDetail()">&times;</button>
+  <h3 id="detail-title"></h3>
+  <div class="detail-body" id="detail-body"></div>
+</div>
+
+<script src="/static/graph_viz.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const graphData = {{ graph_data|safe }};
+  const graph = new ArgusGraph("graph");
+  graph.render(graphData);
+});
+
+function showNodeDetail(name, body) {
+  document.getElementById('detail-title').textContent = name;
+  document.getElementById('detail-body').innerHTML = body;
+  document.querySelector('.node-detail').classList.add('open');
+  document.querySelector('.overlay').classList.add('open');
+}
+
+function closeNodeDetail() {
+  document.querySelector('.node-detail').classList.remove('open');
+  document.querySelector('.overlay').classList.remove('open');
+}
+</script>
+</body>
+</html>

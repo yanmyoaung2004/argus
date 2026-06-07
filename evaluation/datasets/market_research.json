@@ -1,0 +1,32 @@
+[
+  {
+    "query": "Top Y Combinator companies by valuation in 2025",
+    "ground_truth": {
+      "entities": [
+        "Stripe", "Airbnb", "DoorDash", "Coinbase", "Instacart",
+        "Reddit", "Twitch", "Cruise", "Brex", "Deel"
+      ],
+      "claims": [
+        {"text": "Stripe is valued at $65 billion", "entity": "Stripe", "attribute": "valuation", "sources": ["https://example.com/stripe-valuation"]},
+        {"text": "Airbnb is valued at $75 billion", "entity": "Airbnb", "attribute": "valuation", "sources": ["https://example.com/airbnb-valuation"]},
+        {"text": "DoorDash is valued at $35 billion", "entity": "DoorDash", "attribute": "valuation", "sources": ["https://example.com/doordash-valuation"]},
+        {"text": "Coinbase is valued at $25 billion", "entity": "Coinbase", "attribute": "valuation", "sources": ["https://example.com/coinbase-valuation"]},
+        {"text": "Instacart is valued at $12 billion", "entity": "Instacart", "attribute": "valuation", "sources": ["https://example.com/instacart-valuation"]},
+        {"text": "Reddit is valued at $8 billion", "entity": "Reddit", "attribute": "valuation", "sources": ["https://example.com/reddit-valuation"]},
+        {"text": "Twitch was acquired by Amazon for $970 million", "entity": "Twitch", "attribute": "acquisition", "sources": ["https://example.com/twitch-acquisition"]},
+        {"text": "Cruise was acquired by General Motors", "entity": "Cruise", "attribute": "acquisition", "sources": ["https://example.com/cruise-acquisition"]},
+        {"text": "Brex is valued at $12.3 billion", "entity": "Brex", "attribute": "valuation", "sources": ["https://example.com/brex-valuation"]},
+        {"text": "Deel is valued at $12 billion", "entity": "Deel", "attribute": "valuation", "sources": ["https://example.com/deel-valuation"]},
+        {"text": "Stripe was founded in 2010", "entity": "Stripe", "attribute": "founded", "sources": ["https://example.com/stripe-founded"]},
+        {"text": "Airbnb was founded in 2008", "entity": "Airbnb", "attribute": "founded", "sources": ["https://example.com/airbnb-founded"]},
+        {"text": "DoorDash was founded in 2013", "entity": "DoorDash", "attribute": "founded", "sources": ["https://example.com/doordash-founded"]},
+        {"text": "Y Combinator was founded in 2005", "entity": "Y Combinator", "attribute": "founded", "sources": ["https://example.com/yc-founded"]}
+      ],
+      "min_sources": 10,
+      "min_entities": 8,
+      "max_hallucinations": 3,
+      "min_entity_attributes": 1,
+      "description": "Market research benchmark: identify top YC companies and their valuations"
+    }
+  }
+]

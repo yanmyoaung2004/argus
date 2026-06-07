@@ -1,0 +1,29 @@
+[
+  {
+    "query": "What are the key papers on reinforcement learning from human feedback that led to ChatGPT?",
+    "ground_truth": {
+      "entities": [
+        "InstructGPT", "ChatGPT", "RLHF", "PPO",
+        "Deep Reinforcement Learning from Human Preferences",
+        "Training Language Models to Follow Instructions",
+        "Constitutional AI",
+        "Direct Preference Optimization"
+      ],
+      "claims": [
+        {"text": "RLHF was introduced in the paper Deep Reinforcement Learning from Human Preferences by Christiano et al.", "entity": "Deep Reinforcement Learning from Human Preferences", "attribute": "authors", "sources": ["https://example.com/rlhf-paper"]},
+        {"text": "InstructGPT applied RLHF to language models in Training Language Models to Follow Instructions", "entity": "Training Language Models to Follow Instructions", "attribute": "authors", "sources": ["https://example.com/instructgpt-paper"]},
+        {"text": "ChatGPT was built on InstructGPT technology", "entity": "ChatGPT", "attribute": "technology", "sources": ["https://example.com/chatgpt-launch"]},
+        {"text": "PPO is the reinforcement learning algorithm used in RLHF", "entity": "PPO", "attribute": "algorithm", "sources": ["https://example.com/ppo-rlhf"]},
+        {"text": "Constitutional AI was introduced by Anthropic as an alternative to RLHF", "entity": "Constitutional AI", "attribute": "alternative_to", "sources": ["https://example.com/constitutional-ai"]},
+        {"text": "Direct Preference Optimization simplifies RLHF by eliminating the reward model", "entity": "Direct Preference Optimization", "attribute": "method", "sources": ["https://example.com/dpo-paper"]},
+        {"text": "RLHF uses human preferences to train a reward model", "entity": "RLHF", "attribute": "method", "sources": ["https://example.com/rlhf-overview"]},
+        {"text": "InstructGPT was trained with RLHF to follow instructions", "entity": "InstructGPT", "attribute": "training_method", "sources": ["https://example.com/instructgpt-paper"]}
+      ],
+      "min_sources": 6,
+      "min_entities": 5,
+      "max_hallucinations": 2,
+      "min_citation_relationships": 3,
+      "description": "Academic survey benchmark: trace the lineage of RLHF research leading to ChatGPT"
+    }
+  }
+]

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Argus — Research Watcher</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #0d1117; color: #c9d1d9; }
+  h1 { color: #58a6ff; }
+  .status { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.85em; font-weight: 600; }
+  .status.running { background: #1f6feb; color: #fff; }
+  .status.done { background: #238636; color: #fff; }
+  .status.failed { background: #da3633; color: #fff; }
+  .event { border-left: 3px solid #30363d; padding: 8px 16px; margin: 8px 0; background: #161b22; border-radius: 0 6px 6px 0; }
+  .event.step_start { border-color: #58a6ff; }
+  .event.fact { border-color: #3fb950; }
+  .event.message { border-color: #d29922; }
+  .event.done { border-color: #238636; background: #1b3320; }
+  .event.error { border-color: #da3633; background: #332020; }
+  .event.budget { border-color: #d29922; background: #332d20; }
+  .timestamp { color: #8b949e; font-size: 0.8em; }
+  label { display: block; margin: 16px 0 8px; font-weight: 600; }
+  input { width: 100%; padding: 8px 12px; border: 1px solid #30363d; border-radius: 6px; background: #0d1117; color: #c9d1d9; font-size: 1em; box-sizing: border-box; }
+  button { padding: 8px 20px; background: #238636; color: #fff; border: none; border-radius: 6px; font-size: 1em; cursor: pointer; }
+  button:hover { background: #2ea043; }
+  #events { margin-top: 16px; }
+  #log { margin-top: 20px; padding: 12px; background: #161b22; border-radius: 6px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<h1>Argus Research Watcher</h1>
+
+<label for="taskId">Task ID</label>
+<div style="display:flex; gap:8px;">
+<input type="text" id="taskId" placeholder="rs-..." value="">
+<button id="connectBtn">Connect</button>
+<button id="disconnectBtn" disabled>Disconnect</button>
+</div>
+
+<div id="events"></div>
+<div id="log" style="display:none;"></div>
+
+<script>
+let eventSource = null;
+const connectBtn = document.getElementById('connectBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+const taskIdInput = document.getElementById('taskId');
+const eventsDiv = document.getElementById('events');
+const logDiv = document.getElementById('log');
+
+function addEvent(eventType, data) {
+  const div = document.createElement('div');
+  div.className = `event ${eventType}`;
+  const ts = new Date().toLocaleTimeString();
+  let dataStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  div.innerHTML = `<span class="timestamp">${ts}</span> <strong>${eventType}</strong><br>${dataStr}`;
+  eventsDiv.appendChild(div);
+  eventsDiv.scrollTop = eventsDiv.scrollHeight;
+}
+
+function connect() {
+  const taskId = taskIdInput.value.trim();
+  if (!taskId) { alert('Enter a task ID'); return; }
+
+  const url = `/research/${taskId}/status`;
+  eventSource = new EventSource(url);
+
+  eventSource.addEventListener('step_start', (e) => addEvent('step_start', JSON.parse(e.data)));
+  eventSource.addEventListener('fact', (e) => addEvent('fact', JSON.parse(e.data)));
+  eventSource.addEventListener('message', (e) => addEvent('message', JSON.parse(e.data)));
+  eventSource.addEventListener('done', (e) => {
+    addEvent('done', JSON.parse(e.data));
+    eventSource.close();
+    connectBtn.disabled = false;
+    disconnectBtn.disabled = true;
+  });
+  eventSource.addEventListener('error', (e) => {
+    addEvent('error', e.data || 'Connection lost');
+    eventSource.close();
+    connectBtn.disabled = false;
+    disconnectBtn.disabled = true;
+  });
+
+  connectBtn.disabled = true;
+  disconnectBtn.disabled = false;
+}
+
+function disconnect() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  connectBtn.disabled = false;
+  disconnectBtn.disabled = true;
+}
+
+connectBtn.addEventListener('click', connect);
+disconnectBtn.addEventListener('click', disconnect);
+</script>
+</body>
+</html>

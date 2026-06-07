@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: argus-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - argus-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    container_name: argus-app
+    ports:
+      - "8000:8000"
+    environment:
+      - ARGUS_REDIS_URL=redis://redis:6379/0
+      - ARGUS_SQLITE_PATH=/data/argus/knowledge.db
+      - ARGUS_OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - ARGUS_GROQ_API_KEY=${ARGUS_GROQ_API_KEY:-}
+      - ARGUS_OPENROUTER_API_KEY=${ARGUS_OPENROUTER_API_KEY:-}
+    volumes:
+      - argus-data:/data/argus
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  argus-redis-data:
+  argus-data:

@@ -1,0 +1,32 @@
+[
+  {
+    "query": "Compare the latest LLM models from OpenAI, Anthropic, Google, and Meta on benchmarks",
+    "ground_truth": {
+      "entities": [
+        "OpenAI", "Anthropic", "Google", "Meta",
+        "GPT-4o", "Claude 3.5 Sonnet", "Gemini 1.5 Pro", "Llama 3.1 405B"
+      ],
+      "claims": [
+        {"text": "GPT-4o scores 88.7% on MMLU", "entity": "GPT-4o", "attribute": "mmlu_score", "sources": ["https://example.com/gpt4o-benchmarks"]},
+        {"text": "Claude 3.5 Sonnet scores 88.3% on MMLU", "entity": "Claude 3.5 Sonnet", "attribute": "mmlu_score", "sources": ["https://example.com/claude-benchmarks"]},
+        {"text": "Gemini 1.5 Pro scores 85.9% on MMLU", "entity": "Gemini 1.5 Pro", "attribute": "mmlu_score", "sources": ["https://example.com/gemini-benchmarks"]},
+        {"text": "Llama 3.1 405B scores 87.3% on MMLU", "entity": "Llama 3.1 405B", "attribute": "mmlu_score", "sources": ["https://example.com/llama-benchmarks"]},
+        {"text": "GPT-4o scores 87.2% on HumanEval", "entity": "GPT-4o", "attribute": "humaneval_score", "sources": ["https://example.com/gpt4o-code"]},
+        {"text": "Claude 3.5 Sonnet scores 92.0% on HumanEval", "entity": "Claude 3.5 Sonnet", "attribute": "humaneval_score", "sources": ["https://example.com/claude-code"]},
+        {"text": "GPT-4o has a context window of 128K tokens", "entity": "GPT-4o", "attribute": "context_window", "sources": ["https://example.com/gpt4o-specs"]},
+        {"text": "Claude 3.5 Sonnet has a context window of 200K tokens", "entity": "Claude 3.5 Sonnet", "attribute": "context_window", "sources": ["https://example.com/claude-specs"]},
+        {"text": "Gemini 1.5 Pro has a context window of 2M tokens", "entity": "Gemini 1.5 Pro", "attribute": "context_window", "sources": ["https://example.com/gemini-specs"]},
+        {"text": "Llama 3.1 405B has a context window of 128K tokens", "entity": "Llama 3.1 405B", "attribute": "context_window", "sources": ["https://example.com/llama-specs"]},
+        {"text": "OpenAI developed GPT-4o", "entity": "OpenAI", "attribute": "model", "sources": ["https://example.com/openai-models"]},
+        {"text": "Anthropic developed Claude 3.5 Sonnet", "entity": "Anthropic", "attribute": "model", "sources": ["https://example.com/anthropic-models"]},
+        {"text": "Google developed Gemini 1.5 Pro", "entity": "Google", "attribute": "model", "sources": ["https://example.com/google-models"]},
+        {"text": "Meta developed Llama 3.1 405B", "entity": "Meta", "attribute": "model", "sources": ["https://example.com/meta-models"]}
+      ],
+      "min_sources": 8,
+      "min_entities": 6,
+      "max_hallucinations": 2,
+      "min_comparison_dimensions": 3,
+      "description": "Tech comparison benchmark: compare LLM models across benchmarks, context windows, and developer organizations"
+    }
+  }
+]
