@@ -111,6 +111,27 @@ Run `python -m argus --workers-only` in a separate terminal alongside this.
 
 ## Submitting a Research Query
 
+### From the command line (recommended)
+
+The server must be running (`python -m argus` in another terminal):
+
+```bash
+# Defaults: 50 max sources, 30 min time limit
+python -m argus research "What are the latest advances in LLM agents?"
+
+# Custom limits
+python -m argus research "AI coding tools comparison" --max-sources 33 --time-limit 333
+```
+
+The CLI:
+1. Submits the query to the running server
+2. Watches progress live via SSE
+3. Fetches the HTML report on completion
+4. Saves to `report_{slug}_{task_id}.html`
+5. Opens it in your browser
+
+### Via API (curl)
+
 ```bash
 curl -X POST http://localhost:8000/research \
   -H "Content-Type: application/json" \
@@ -160,7 +181,7 @@ Increases/decreases source credibility scores for future research.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/research` | Create research task |
+| POST | `/research` | Create research task. Body: `{"query": "...", "max_sources": 50, "max_duration_minutes": 30}` |
 | GET | `/research/{task_id}/status` | SSE progress stream |
 | GET | `/research/{task_id}/report` | Markdown report |
 | GET | `/research/{task_id}/html` | Interactive HTML report |
@@ -257,6 +278,23 @@ python -m argus onboard
 ```
 
 Already-configured providers show "Reconfigure?" — answer `n` to keep current settings, `y` to change them.
+
+### Submit research from CLI
+
+```bash
+python -m argus research "your query" --max-sources 50 --time-limit 30
+```
+
+Options:
+- `--max-sources`, `-s` — max sources to collect (1–500, default 50)
+- `--time-limit`, `-t` — max research time in minutes (1–360, default 30)
+
+### Available CLI commands
+
+```bash
+python -m argus onboard      # Provider setup wizard
+python -m argus research ...  # Submit research query
+```
 
 ### Ctrl+C during wizard
 

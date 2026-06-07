@@ -103,6 +103,25 @@ Open http://localhost:8000/docs for the interactive Swagger UI.
 
 ## Usage
 
+### Run a research query via CLI
+
+Submit research directly from the command line. The server must be running (`python -m argus`):
+
+```bash
+# Defaults: 50 max sources, 30 min time limit
+python -m argus research "What are the latest advances in LLM agents?"
+
+# Custom limits
+python -m argus research "AI coding tools comparison" --max-sources 33 --time-limit 333
+```
+
+What happens:
+1. Submits the research query to the running server
+2. Watches progress live via SSE (each agent step)
+3. Fetches the interactive HTML report when done
+4. Saves to `report_{slug}_{task_id}.html`
+5. Opens the report in your browser
+
 ### Run a research query via API
 
 ```bash
@@ -179,7 +198,7 @@ Returns hit rate, total entries, kept entries, size, and expiry info.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/research` | Create a new research task |
+| POST | `/research` | Create a new research task. Body: `{"query": "...", "max_sources": 50, "max_duration_minutes": 30}` |
 | GET | `/research/{task_id}/status` | SSE stream of research progress |
 | GET | `/research/{task_id}/report` | Markdown report |
 | GET | `/research/{task_id}/html` | Interactive HTML report |
