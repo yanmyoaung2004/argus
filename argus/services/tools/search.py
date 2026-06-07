@@ -9,6 +9,8 @@ import httpx
 from ddgs import DDGS
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from argus.llm.provider_config import ProviderEntry
+from argus.llm.provider_config import load_settings as load_provider_settings
 from argus.shared.config import settings
 
 
@@ -183,13 +185,149 @@ class FirecrawlSearch(SearchProvider):
         )
 
 
+class TavilySearch(SearchProvider):
+    """Tavily AI-optimized search API."""
+
+    BASE_URL = "https://api.tavily.com"
+
+    def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
+        self._api_key = api_key or ""
+        self._base_url = (base_url or settings.tavily_base_url).rstrip("/")
+        self._client = httpx.Client(timeout=15.0)
+
+    @retry(
+        stop=stop_after_attempt(settings.llm_retry_max_attempts),
+        wait=wait_exponential(
+            multiplier=settings.llm_retry_min_wait_seconds,
+            max=settings.llm_retry_max_wait_seconds,
+        ),
+    )
+    def search(self, query: str, max_results: int = 10) -> SearchResponse:
+        start = time.monotonic()
+
+        response = self._client.post(
+            f"{self._base_url}/search",
+            json={
+                "query": query,
+                "api_key": self._api_key,
+                "max_results": max_results,
+                "search_depth": "basic",
+            },
+        )
+        response.raise_for_status()
+        data: dict[str, Any] = response.json()
+
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        raw_results = data.get("results", [])
+        results = [
+            SearchResult(
+                url=r.get("url", ""),
+                title=r.get("title", ""),
+                snippet=r.get("content", ""),
+            )
+            for r in raw_results
+        ]
+
+        return SearchResponse(
+            results=results,
+            metadata=SearchMetadata(
+                provider="tavily",
+                total_results=len(results),
+                latency_ms=elapsed_ms,
+                cost=0.01,
+            ),
+        )
+
+
 class WebSearch:
-    """Web search with DuckDuckGo as primary, SerpAPI and Firecrawl as fallbacks."""
+    """Web search with priority-based provider ordering from providers.json.
+
+    Falls back to legacy env-var-based config when no search providers
+    have been configured via ``onboard`` or ``search`` CLI.
+    """
 
     def __init__(self) -> None:
         self._duckduckgo = DuckDuckGoSearch()
         self._serpapi: SerpAPISearch | None = None
         self._firecrawl: FirecrawlSearch | None = None
+        self._tavily: TavilySearch | None = None
+        self._profile_cache: dict[str, SearchProvider] = {}
+
+    def _get_search_providers(self) -> list[ProviderEntry]:
+        ps = load_provider_settings()
+        enabled = ps.get_enabled("search")
+        return sorted(enabled, key=lambda p: p.priority)
+
+    def _build_provider(self, entry: ProviderEntry) -> SearchProvider | None:
+        ptype = entry.provider_type
+        cached = self._profile_cache.get(ptype)
+        if cached is not None:
+            return cached
+
+        if ptype == "duckduckgo":
+            inst: SearchProvider = DuckDuckGoSearch()
+        elif ptype == "serpapi":
+            inst = SerpAPISearch(api_key=entry.api_key or settings.serpapi_api_key)
+        elif ptype == "firecrawl":
+            inst = FirecrawlSearch(
+                api_key=entry.api_key or settings.firecrawl_api_key,
+                base_url=entry.base_url or settings.firecrawl_base_url,
+            )
+        elif ptype == "tavily":
+            inst = TavilySearch(
+                api_key=entry.api_key or settings.tavily_api_key,
+                base_url=entry.base_url or settings.tavily_base_url,
+            )
+        else:
+            return None
+
+        self._profile_cache[ptype] = inst
+        return inst
+
+    def search(self, query: str, max_results: int = 10) -> SearchResponse:
+        providers = self._get_search_providers()
+        if providers:
+            for entry in providers:
+                provider = self._build_provider(entry)
+                if provider is None:
+                    continue
+                try:
+                    return provider.search(query, max_results=max_results)
+                except Exception:
+                    continue
+            return SearchResponse(
+                results=[],
+                metadata=SearchMetadata(provider="none", total_results=0, latency_ms=0),
+            )
+
+        # Legacy fallback: no search config saved yet, use env vars directly
+        try:
+            return self._duckduckgo.search(query, max_results=max_results)
+        except Exception:
+            pass
+
+        if settings.serpapi_api_key:
+            try:
+                return self._serpapi.search(query, max_results=max_results)
+            except Exception:
+                pass
+
+        if settings.firecrawl_api_key:
+            try:
+                return self._get_firecrawl().search(query, max_results=max_results)
+            except Exception:
+                pass
+
+        if settings.tavily_api_key:
+            try:
+                return self._get_tavily().search(query, max_results=max_results)
+            except Exception:
+                pass
+
+        return SearchResponse(
+            results=[],
+            metadata=SearchMetadata(provider="none", total_results=0, latency_ms=0),
+        )
 
     def _get_serpapi(self) -> SerpAPISearch:
         if self._serpapi is None:
@@ -204,29 +342,10 @@ class WebSearch:
             )
         return self._firecrawl
 
-    def search(self, query: str, max_results: int = 10) -> SearchResponse:
-        try:
-            return self._duckduckgo.search(query, max_results=max_results)
-        except Exception:
-            pass
-
-        if settings.serpapi_api_key:
-            try:
-                return self._get_serpapi().search(query, max_results=max_results)
-            except Exception:
-                pass
-
-        if settings.firecrawl_api_key:
-            try:
-                return self._get_firecrawl().search(query, max_results=max_results)
-            except Exception:
-                pass
-
-        return SearchResponse(
-            results=[],
-            metadata=SearchMetadata(
-                provider="none",
-                total_results=0,
-                latency_ms=0,
-            ),
-        )
+    def _get_tavily(self) -> TavilySearch:
+        if self._tavily is None:
+            self._tavily = TavilySearch(
+                api_key=settings.tavily_api_key,
+                base_url=settings.tavily_base_url,
+            )
+        return self._tavily

@@ -28,15 +28,23 @@ The `onboard` command is the recommended way to configure Argus:
 python -m argus onboard
 ```
 
-It walks you through all providers interactively, validates API keys immediately, and saves the configuration to `~/.argus/providers.json`.
+The `onboard` command first shows a numbered list of available LLM and search providers, letting you pick which ones to configure (e.g. ``1,3,5``, ``1-5``, or ``all``). Only the selected providers are then walked through for API key entry, testing, and model selection — no need to tab through every provider if you only want one or two.
+
+Validates API keys immediately and saves the configuration to ``~/.argus/providers.json``.
 
 ### LLM Providers
 
 | Provider | Cost | Key Required | Notes |
 |----------|------|-------------|-------|
 | **Groq** | Free | Yes | Primary free LLM. Model: `llama-3.1-8b-instant` |
-| **Ollama** | Free | No | Local LLM. Requires `ollama serve` running |
+| **Ollama** | Free | No/Yes | Local (no key) or cloud/remote with API key |
 | **OpenRouter** | ~$0.0001–0.01 | Yes | Paid fallback with free models available |
+| **OpenAI** | Pay-per-token | Yes | GPT-4o, GPT-4o-mini, etc. |
+| **Anthropic** | Pay-per-token | Yes | Claude 3.5 Sonnet, Haiku, Opus |
+| **Google AI Studio** | Free tier | Yes | Gemini 2.0 Flash, 1.5 Pro |
+| **LiteLLM** | Varies | Optional | Proxy to many backends |
+| **Together AI** | Pay-per-token | Yes | Llama, Mixtral, Qwen hosted |
+| **DeepSeek** | ~$0.27/M tokens | Yes | DeepSeek Chat & Coder |
 | **OpenAI-Compatible** | Varies | Yes | Custom endpoint (e.g., Lightning AI, Azure) |
 
 Each provider prompts for:
@@ -54,6 +62,7 @@ If a key is invalid, you get 3 retry attempts before the provider is skipped.
 | **DuckDuckGo** | Free | No | Always available, no setup needed |
 | **SerpAPI** | ~$0.01/query | Yes | Google search results API |
 | **Firecrawl** | ~$0.003/page | Yes | Web scraping + search (v2 API) |
+| **Tavily** | ~$0.01/search | Yes | AI-optimized search for LLM agents |
 
 Search providers are configured the same way — enable, enter API key, test connection.
 
@@ -77,6 +86,32 @@ ARGUS_FIRECRAWL_API_KEY=...
 ```
 
 You can skip this if you prefer to manage `.env` manually.
+
+### Stage Profiles (per-stage provider assignment)
+
+Use `python -m argus profile` to assign specific providers+models to individual research stages:
+
+| Stage | Default Primary | Purpose |
+|-------|----------------|---------|
+| **planning** | Ollama | Query decomposition & strategy |
+| **scout** | Groq | Web search & discovery |
+| **deep_dive** | Ollama | Scraping & extraction |
+| **verification** | Groq | Cross-check & conflict detection |
+| **synthesis** | Ollama | Entity resolution & graph building |
+| **conflict_resolution** | Groq | Contradictory claim analysis |
+
+When a stage has a profile assignment, the router tries that provider first, then falls back to the default chain on failure. Clear all assignments with `python -m argus profile-clear`.
+
+### Search Provider Priority
+
+Use `python -m argus search` to independently configure search providers and their fallback order without re-running the full `onboard` wizard:
+
+- Set priority (1 = primary, tried first)
+- Enable/disable individual providers
+- Update API keys and test connections
+- View current config with `python -m argus search-list`
+
+The `WebSearch` engine reads these settings at runtime and tries providers in priority order, falling through on failure.
 
 ---
 
@@ -245,11 +280,25 @@ Increases/decreases source credibility scores for future research.
 | `ARGUS_OLLAMA_MODEL` | `llama3.2:3b` | Ollama model |
 | `ARGUS_OPENROUTER_API_KEY` | — | OpenRouter API key |
 | `ARGUS_OPENROUTER_MODEL` | `mistralai/mixtral-8x7b-instruct` | OpenRouter model |
+| `ARGUS_OPENAI_API_KEY` | — | OpenAI API key |
+| `ARGUS_OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model |
+| `ARGUS_ANTHROPIC_API_KEY` | — | Anthropic API key |
+| `ARGUS_ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022` | Anthropic model |
+| `ARGUS_GOOGLE_AI_STUDIO_API_KEY` | — | Google AI Studio key |
+| `ARGUS_GOOGLE_AI_STUDIO_MODEL` | `gemini-2.0-flash` | Gemini model |
+| `ARGUS_LITELLM_API_KEY` | — | LiteLLM proxy key |
+| `ARGUS_LITELLM_BASE_URL` | `http://localhost:4000` | LiteLLM endpoint |
+| `ARGUS_TOGETHER_AI_API_KEY` | — | Together AI key |
+| `ARGUS_TOGETHER_AI_MODEL` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | Together AI model |
+| `ARGUS_DEEPSEEK_API_KEY` | — | DeepSeek API key |
+| `ARGUS_DEEPSEEK_MODEL` | `deepseek-chat` | DeepSeek model |
 | `ARGUS_OPENAI_COMPATIBLE_API_KEY` | — | Custom endpoint key |
 | `ARGUS_OPENAI_COMPATIBLE_BASE_URL` | — | Custom endpoint URL |
 | `ARGUS_SERPAPI_API_KEY` | — | SerpAPI search key |
 | `ARGUS_FIRECRAWL_API_KEY` | — | Firecrawl API key |
 | `ARGUS_FIRECRAWL_BASE_URL` | `https://api.firecrawl.dev` | Firecrawl API base |
+| `ARGUS_TAVILY_API_KEY` | — | Tavily search API key |
+| `ARGUS_TAVILY_BASE_URL` | `https://api.tavily.com` | Tavily API base |
 | `ARGUS_BUDGET_PER_RESEARCH` | `0.50` | Maximum cost per query |
 | `ARGUS_AGENT_CONCURRENCY` | `2` | Parallel agent count |
 | `ARGUS_LLM_RETRY_MAX_ATTEMPTS` | `3` | LLM retry attempts |
@@ -337,8 +386,13 @@ python -m argus onboard          # Provider setup wizard
 python -m argus research ...     # Submit research query
 python -m argus list             # List all research tasks
 python -m argus status <task>    # Show task status + steps
+python -m argus profile          # Per-stage provider/model assignment
+python -m argus profile-list     # Show stage assignments
+python -m argus profile-clear    # Reset all stage assignments
+python -m argus search           # Search provider priority & settings
+python -m argus search-list      # Show search provider config
 ```
 
-### Ctrl+C during wizard
+### Esc / Ctrl+C during wizard
 
-Pressing Ctrl+C exits cleanly with "Setup cancelled. No changes saved."
+Pressing Esc or Ctrl+C exits cleanly with "Setup cancelled. No changes saved."

@@ -41,8 +41,13 @@ def _run_kg_writer() -> None:
 def main() -> None:
     import sys
 
-    # Route CLI subcommands (onboard, research, list, status) and --help to the CLI parser
-    cli_commands = {"onboard", "research", "list", "status", "--help", "-h"}
+    # Route CLI subcommands and --help to the CLI parser
+    cli_commands = {
+        "onboard", "research", "list", "status",
+        "profile", "profile-list", "profile-clear",
+        "search", "search-list",
+        "--help", "-h",
+    }
     if len(sys.argv) > 1 and sys.argv[1] in cli_commands:
         from argus.cli import main as cli_main
         cli_main()

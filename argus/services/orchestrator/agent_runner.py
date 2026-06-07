@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -71,7 +72,11 @@ class AgentRunner:
         consumer_name = f"{self.agent_type.value}-worker-{int(time.time())}"
         logger.info(
             "Agent runner starting",
-            extra={"agent": self.agent_type.value, "consumer": consumer_name, "concurrency": self._concurrency},
+            extra={
+                "agent": self.agent_type.value,
+                "consumer": consumer_name,
+                "concurrency": self._concurrency,
+            },
         )
         self._consume_loop(consumer_name)
 
@@ -145,7 +150,9 @@ class AgentRunner:
             logger.warning("Failed to parse task message", extra={"error": str(exc)})
             return None
 
-    def _process_message(self, msg_id: bytes, msg_data: dict[bytes, bytes], consumer_name: str) -> None:
+    def _process_message(
+        self, msg_id: bytes, msg_data: dict[bytes, bytes], consumer_name: str
+    ) -> None:
         r = self._get_redis()
         if r is None:
             return
@@ -200,24 +207,33 @@ class AgentRunner:
             except Exception:
                 logger.warning("Failed to publish fact batch", exc_info=True)
 
-    def _emit_progress(self, task_id: str, step_id: int, event_type: str, data: dict[str, Any]) -> None:
+    def _emit_progress(
+        self, task_id: str, step_id: int, event_type: str, data: dict[str, Any]
+    ) -> None:
         r = self._get_redis()
         if r is None:
             return
         try:
+            event_data = {
+                "type": event_type,
+                "step_id": step_id,
+                "data": json.dumps(data),
+            }
             r.xadd(
                 f"progress:{task_id}",
-                {"type": event_type, "data": json.dumps(data)},
+                event_data,
                 maxlen=settings.redis_stream_maxlen,
             )
+
+            if event_type == "step_complete":
+                with contextlib.suppress(Exception):
+                    r.publish(f"task_events:{task_id}", json.dumps({"step_id": step_id}))
         except Exception:
             pass
 
-    def _ack_message(self, msg_id: bytes, consumer_name: str) -> None:
+    def _ack_message(self, msg_id: bytes, _consumer_name: str) -> None:
         r = self._get_redis()
         if r is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             r.xack(self.STREAM, self.CONSUMER_GROUP, msg_id)
-        except Exception:
-            pass

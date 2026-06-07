@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import redis as redis_lib
@@ -21,7 +25,10 @@ class ResearchManager:
         self._planner = RuleBasedPlanner()
         self._tasks: dict[str, ResearchTask] = {}
         self._timeouts: dict[str, IdleTimeoutMonitor] = {}
+        self._completed_steps: dict[str, set[int]] = {}
         self._shutdown = False
+        self._completion_thread = threading.Thread(target=self._poll_completions, daemon=True)
+        self._completion_thread.start()
 
     def _get_redis(self) -> redis_lib.Redis | None:
         if self._redis is None:
@@ -87,6 +94,54 @@ class ResearchManager:
             stream = f"tasks:{step.agent.value}"
             r.xadd(stream, message, maxlen=settings.redis_stream_maxlen)  # type: ignore[arg-type]
 
+    def _poll_completions(self) -> None:
+        default_wait = 3.0
+        wait = getattr(settings, "research_idle_timeout_minutes", default_wait)
+        while not self._shutdown:
+            time.sleep(min(wait * 60, 30.0))
+            for task_id in list(self._tasks.keys()):
+                task = self._tasks[task_id]
+                if task.status != ResearchStatus.RUNNING or task.plan is None:
+                    continue
+                if self._all_steps_done(task_id, task.plan):
+                    logger.info("All steps complete, finalizing task", extra={"task_id": task_id})
+                    self.complete_task(task_id)
+
+    def _all_steps_done(self, task_id: str, plan: ResearchPlan) -> bool:
+        r = self._get_redis()
+        if r is None:
+            return False
+        try:
+            events = r.xrange(f"progress:{task_id}", count=100)
+        except Exception:
+            return False
+        completed = set()
+        for _msg_id, msg_data in events:
+            if msg_data.get(b"type") == b"step_complete" and b"step_id" in msg_data:
+                completed.add(int(msg_data[b"step_id"]))
+        plan_step_ids = {s.id for s in plan.steps}
+        return plan_step_ids.issubset(completed) and len(plan_step_ids) > 0
+
+    def _save_report(self, task_id: str) -> None:
+        try:
+            from argus.ui.report_generator import MarkdownReportGenerator
+            gen = MarkdownReportGenerator()
+            report = gen.generate(task_id)
+            if not report:
+                logger.warning("No report content generated", extra={"task_id": task_id})
+                return
+            out_dir = Path.home() / ".argus" / "reports"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            task = self._tasks.get(task_id)
+            raw = task.query if task else "research"
+            safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in raw)
+            slug = safe[:40].strip().replace(" ", "_")
+            path = out_dir / f"report_{slug}_{task_id[:8]}.md"
+            path.write_text(report, encoding="utf-8")
+            logger.info("Report saved", extra={"task_id": task_id, "path": str(path)})
+        except Exception as exc:
+            logger.error("Failed to save report", extra={"task_id": task_id, "error": str(exc)})
+
     def mark_progress(self, task_id: str) -> None:
         monitor = self._timeouts.get(task_id)
         if monitor is not None:
@@ -99,6 +154,7 @@ class ResearchManager:
             from datetime import datetime
             task.completed_at = datetime.utcnow()
             logger.info("Research completed", extra={"task_id": task_id})
+            self._save_report(task_id)
         monitor = self._timeouts.pop(task_id, None)
         if monitor is not None:
             monitor.stop()

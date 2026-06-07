@@ -42,6 +42,42 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_timeout_seconds: int = 60
 
+    # OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_timeout_seconds: int = 60
+
+    # Anthropic
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_base_url: str = "https://api.anthropic.com/v1"
+    anthropic_timeout_seconds: int = 120
+
+    # Google AI Studio
+    google_ai_studio_api_key: str = ""
+    google_ai_studio_model: str = "gemini-2.0-flash"
+    google_ai_studio_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    google_ai_studio_timeout_seconds: int = 60
+
+    # LiteLLM
+    litellm_api_key: str = ""
+    litellm_model: str = "gpt-4o-mini"
+    litellm_base_url: str = "http://localhost:4000"
+    litellm_timeout_seconds: int = 60
+
+    # Together AI
+    together_ai_api_key: str = ""
+    together_ai_model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    together_ai_base_url: str = "https://api.together.xyz/v1"
+    together_ai_timeout_seconds: int = 60
+
+    # DeepSeek
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_timeout_seconds: int = 60
+
     # OpenAI-compatible endpoint
     openai_compatible_api_key: str = ""
     openai_compatible_model: str = "gpt-4o-mini"
@@ -89,6 +125,10 @@ class Settings(BaseSettings):
     # Firecrawl (web scraping / search fallback)
     firecrawl_api_key: str = ""
     firecrawl_base_url: str = "https://api.firecrawl.dev"
+
+    # Tavily (AI-optimized search API)
+    tavily_api_key: str = ""
+    tavily_base_url: str = "https://api.tavily.com"
 
     # DuckDuckGo rate limiting
     ddg_rate_limit_per_second: float = 1.0

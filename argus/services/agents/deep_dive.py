@@ -6,6 +6,7 @@ from typing import Any
 
 from argus.llm.router import CostAwareRouter
 from argus.services.agents.base import BaseAgent
+from argus.services.memory.source_cache import SourceCache
 from argus.services.tools.parser import DocumentParser
 from argus.services.tools.scraper import WebScraper
 from argus.shared.models import AgentType, Claim, Fact, Source, TaskStep
@@ -49,6 +50,7 @@ class DeepDiveAgent(BaseAgent):
         self._scraper = WebScraper()
         self._parser = DocumentParser()
         self._batch_router: CostAwareRouter | None = None
+        self._source_cache = SourceCache()
 
     def _get_router(self) -> CostAwareRouter:
         if self._batch_router is None:
@@ -83,8 +85,23 @@ class DeepDiveAgent(BaseAgent):
         sources_data: list[dict[str, str]] = []
         for url in urls:
             try:
+                cached = self._source_cache.get(url)
+                if cached is not None:
+                    sources_data.append({
+                        "url": url,
+                        "title": url,
+                        "content": cached,
+                    })
+                    logger.info("Source cache hit", extra={"url": url})
+                    continue
+
                 response = self._scraper.scrape(url)
                 if response.content and response.content.markdown.strip():
+                    self._source_cache.set(
+                        url,
+                        response.content.markdown,
+                        keep=True,
+                    )
                     sources_data.append({
                         "url": url,
                         "title": response.content.metadata.get("title", url),
@@ -143,6 +160,7 @@ class DeepDiveAgent(BaseAgent):
             ))
 
         try:
+            self._check_budget(estimated_cost=0.02)
             response_text, provider, cost = self._get_router().complete(
                 task_type="deep_dive",
                 prompt=prompt,

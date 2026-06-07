@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import getpass
 import sys
+import time
 from typing import Any
 
 import httpx
@@ -17,67 +17,178 @@ from argus.llm.provider_config import (
     save_settings,
 )
 
-WELCOME = """
+# ── Terminal colors ───────────────────────────────────────────────────
 
-  ╭──────────────────────────────────────────────╮
-  │           Argus Provider Setup               │
-  │                                              │
-  │  Configure LLM providers AND search/tool     │
-  │  providers. Pick which ones to use, enter    │
-  │  API keys, choose models, and set priority.  │
-  │                                              │
-  │  Keys are tested immediately. Invalid keys   │
-  │  will be rejected and you can retry.         │
-  │                                              │
-  │  Press Ctrl+C to exit at any time.           │
-  ╰──────────────────────────────────────────────╯
+C = type("C", (), {
+    "CYAN": "\x1b[96m",
+    "GREEN": "\x1b[92m",
+    "YELLOW": "\x1b[93m",
+    "RED": "\x1b[91m",
+    "BLUE": "\x1b[94m",
+    "MAGENTA": "\x1b[95m",
+    "BOLD": "\x1b[1m",
+    "DIM": "\x1b[2m",
+    "RESET": "\x1b[0m",
+    "ERASE_LINE": "\x1b[2K\r",
+})()
 
-"""
+
+def c(color_code: str, text: str) -> str:
+    return f"{color_code}{text}{C.RESET}"
+
+
+_N = lambda s: c(C.CYAN, s)  # noqa: E731
+_B = lambda s: c(C.BOLD + C.CYAN, s)  # noqa: E731
+_Y = lambda s: c(C.YELLOW, s)  # noqa: E731
+_L = _N("\u2551")
+_BX_TOP = _N("\u2554\u2550" * 27 + "\u2557")
+_BX_BOT = _N("\u255a\u2550" * 27 + "\u255d")
+_BX_SP = _L + " " * 55 + _L
+_BX_L1 = _L + "   " + _B("ARGUS \u2014 Provider Setup Wizard") + " " * 6 + _L
+_BX_L2 = _L + "   Configure LLM + search providers. API keys " + " " * 2 + _L
+_BX_L3 = _L + "   are tested instantly \u2014 no guessing.    " + " " * 4 + _L
+_BX_L4 = _L + "   Press " + _Y("Esc/Ctrl+C") + " to exit \u00b7 saved to providers.json" + _L
+
+BANNER = (
+    _N("    ") + _BX_TOP + "\n"
+    + _N("    ") + _BX_L1 + "\n"
+    + _N("    ") + _BX_SP + "\n"
+    + _N("    ") + _BX_L2 + "\n"
+    + _N("    ") + _BX_L3 + "\n"
+    + _N("    ") + _BX_SP + "\n"
+    + _N("    ") + _BX_L4 + "\n"
+    + _N("    ") + _BX_BOT
+)
+
+
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _yn(prompt: str, default: bool = True) -> bool:
-    suffix = " [Y/n]" if default else " [y/N]"
+def _input_line(prompt: str) -> str:
+    """Read a line of input; Esc or Ctrl+C raises KeyboardInterrupt."""
+    try:
+        import msvcrt  # noqa: F811
+    except ImportError:
+        return input(prompt)
+
+    print(prompt, end="", flush=True)
+    chars: list[str] = []
     while True:
-        raw = input(prompt + suffix + " ").strip().lower()
+        ch = msvcrt.getch()
+        if ch in (b"\r", b"\n"):
+            print()
+            break
+        if ch in (b"\x03", b"\x1b"):
+            print()
+            raise KeyboardInterrupt
+        if ch in (b"\x08", b"\x7f"):
+            if chars:
+                chars.pop()
+                print("\b \b", end="", flush=True)
+            continue
+        try:
+            char = ch.decode("utf-8")
+            if char.isprintable():
+                chars.append(char)
+                print(char, end="", flush=True)
+        except UnicodeDecodeError:
+            pass
+    return "".join(chars)
+
+
+def _secret_input(prompt: str) -> str:
+    """Read a secret value, displaying • for each character typed.
+
+    After Enter, briefly shows the last 4 characters so the user
+    can confirm their input, then clears the confirmation.
+    """
+    print(f"  {prompt} ", end="", flush=True)
+    chars: list[str] = []
+    try:
+        import msvcrt
+        _use_msvcrt = True
+    except ImportError:
+        _use_msvcrt = False
+
+    if _use_msvcrt:
+        while True:
+            ch = msvcrt.getch()
+            if ch in (b"\r", b"\n"):
+                print()
+                break
+            if ch in (b"\x03", b"\x1b"):
+                print()
+                raise KeyboardInterrupt
+            if ch in (b"\x08", b"\x7f"):
+                if chars:
+                    chars.pop()
+                    print("\b \b", end="", flush=True)
+                continue
+            try:
+                char = ch.decode("utf-8")
+                if char.isprintable():
+                    chars.append(char)
+                    print(c(C.DIM, "•"), end="", flush=True)
+            except UnicodeDecodeError:
+                pass
+    else:
+        import getpass
+        val = getpass.getpass(f"  {prompt} ")
+        chars = list(val)
+
+    result = "".join(chars)
+    if result:
+        hidden = c(C.DIM, "•" * max(0, len(result) - 4))
+        shown = c(C.BOLD, result[-4:])
+        print(f"  {hidden}{shown}  {c(C.GREEN, '✓')}", end="", flush=True)
+        time.sleep(0.8)
+        print(f"\r{' ' * (len(prompt) + len(result) + 12)}\r", end="", flush=True)
+
+    return result
+
+
+def _yn(prompt: str, default: bool = True) -> bool:
+    suffix = c(C.DIM, " [Y/n]") if default else c(C.DIM, " [y/N]")
+    badge = c(C.CYAN, "?")
+    while True:
+        raw = _input_line(f"  {badge} {prompt}{suffix} ").strip().lower()
         if not raw:
             return default
         if raw in ("y", "yes"):
             return True
         if raw in ("n", "no"):
             return False
-        print("  Please answer 'y' or 'n'.")
+        print(f"  {c(C.RED, '✗')} Please answer 'y' or 'n'.")
 
 
-def _text(prompt: str, default: str = "", *, secret: bool = False) -> str:
-    suffix = f" [{default}]" if default else ""
+def _text(prompt: str, default: str = "") -> str:
+    suffix = c(C.DIM, f" [{default}]") if default else ""
+    badge = c(C.CYAN, "▸")
     while True:
-        if secret:
-            val = getpass.getpass(prompt + suffix + " ")
-        else:
-            val = input(prompt + suffix + " ").strip()
+        val = _input_line(f"  {badge} {prompt}{suffix} ").strip()
         if val:
             return val
         if default:
             return default
-        print("  This field is required.")
+        print(f"  {c(C.RED, '✗')} This field is required.")
 
 
 def _pick_model(models: list[str], default: str) -> str:
     if not models:
-        raw = input(f"  Model name [{default}]: ").strip()
+        raw = _input_line(f"  {c(C.CYAN, '▸')} Model name {c(C.DIM, f'[{default}]')} ").strip()
         return raw or default
 
-    print("  Available models:")
+    badge = c(C.CYAN, "▸")
+    print(f"  {badge} Available models:")
     for i, m in enumerate(models, 1):
-        tag = " (default)" if m == default else ""
-        print(f"    {i}. {m}{tag}")
-    print(f"    {len(models) + 1}. Type custom name")
+        tag = c(C.GREEN, "  ← default") if m == default else ""
+        print(f"    {c(C.YELLOW, str(i) + '.')} {m}{tag}")
+    print(f"    {c(C.YELLOW, str(len(models) + 1) + '.')} Type custom name")
 
     while True:
-        raw = input("  Select [1]: ").strip()
+        raw = _input_line(f"  {badge} Select {c(C.DIM, '[1]')} ").strip()
         if not raw:
             return models[0] if default not in models else default
         try:
@@ -85,10 +196,30 @@ def _pick_model(models: list[str], default: str) -> str:
             if 1 <= idx <= len(models):
                 return models[idx - 1]
             if idx == len(models) + 1:
-                return _text("  Enter model name", default=default)
+                return _text("Model name", default=default)
         except ValueError:
             pass
-        print("  Invalid choice.")
+        print(f"  {c(C.RED, '✗')} Invalid choice.")
+
+
+# ── Spinner ──────────────────────────────────────────────────────────
+
+
+class Spinner:
+    _chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self, message: str = "") -> None:
+        self._message = message
+        self._idx = 0
+
+    def tick(self) -> None:
+        self._idx = (self._idx + 1) % len(self._chars)
+        print(f"\r  {c(C.CYAN, self._chars[self._idx])} {self._message}", end="", flush=True)
+
+    def done(self, ok: bool = True, msg: str = "") -> None:
+        icon = c(C.GREEN, "✓") if ok else c(C.RED, "✗")
+        extra = f" {c(C.DIM, msg)}" if msg else ""
+        print(f"\r  {icon} {self._message}{extra}" + " " * 10)
 
 
 # ── LLM connection testers ────────────────────────────────────────────
@@ -145,15 +276,65 @@ def _test_openai_compatible(url: str, key: str) -> tuple[bool, str, list[str]]:
     return False, f"HTTP {resp.status_code}: {body}", []
 
 
+def _test_anthropic(url: str, key: str) -> tuple[bool, str, list[str]]:
+    resp = httpx.get(
+        url.rstrip("/") + "/models",
+        headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
+        timeout=15,
+    )
+    if resp.status_code == 200:
+        models = [m["id"] for m in resp.json()["data"]]
+        return True, "Connected", models
+    body = resp.text[:300]
+    if resp.status_code == 401:
+        return False, "Invalid API key (401)", []
+    return False, f"HTTP {resp.status_code}: {body}", []
+
+
+def _test_google_ai_studio(url: str, key: str) -> tuple[bool, str, list[str]]:
+    resp = httpx.get(
+        f"{url.rstrip('/')}/models",
+        params={"key": key},
+        timeout=15,
+    )
+    if resp.status_code == 200:
+        models = [m["name"].replace("models/", "") for m in resp.json().get("models", [])]
+        return True, "Connected", models
+    body = resp.text[:300]
+    if resp.status_code in (401, 403):
+        return False, "Invalid API key", []
+    return False, f"HTTP {resp.status_code}: {body}", []
+
+
 LLM_TESTERS: dict[str, Any] = {
     "groq": _test_groq,
     "openrouter": _test_openrouter,
     "ollama": _test_ollama,
+    "openai": _test_openai_compatible,
+    "anthropic": _test_anthropic,
+    "google_ai_studio": _test_google_ai_studio,
+    "litellm": _test_openai_compatible,
+    "together_ai": _test_openai_compatible,
+    "deepseek": _test_openai_compatible,
     "openai_compatible": _test_openai_compatible,
 }
 
 
 # ── Search connection testers ─────────────────────────────────────────
+
+
+def _test_tavily(url: str, key: str) -> tuple[bool, str, None]:
+    resp = httpx.post(
+        url.rstrip("/") + "/search",
+        json={"query": "test", "api_key": key, "max_results": 1},
+        timeout=15,
+    )
+    if resp.status_code == 200:
+        return True, "Connected", None
+    if resp.status_code == 401:
+        return False, "Invalid API key (401)", None
+    body = resp.text[:200]
+    return False, f"HTTP {resp.status_code}: {body}", None
 
 
 def _test_serpapi(url: str, key: str) -> tuple[bool, str, None]:
@@ -193,6 +374,7 @@ SEARCH_TESTERS: dict[str, Any] = {
     "serpapi": _test_serpapi,
     "firecrawl": _test_firecrawl,
     "duckduckgo": _test_duckduckgo,
+    "tavily": _test_tavily,
 }
 
 
@@ -202,59 +384,82 @@ SEARCH_TESTERS: dict[str, Any] = {
 def _configure_llm(
     defn: dict[str, Any],
     existing: ProviderEntry | None,
+    index: int,
+    total: int,
 ) -> ProviderEntry | None:
     ptype = defn["provider_type"]
     label = defn["display_name"]
 
     already = existing is not None and existing.enabled and existing.api_key
-    if already and not _yn(
-        f"\n── {label} ──\n  Reconfigure? (current keys are saved)", default=False
-    ):
+    status = c(C.GREEN, "✓ enabled") if already else c(C.DIM, "not configured")
+    print(f"\n  {c(C.CYAN + C.BOLD, f'[{index}/{total}]')}  {c(C.BOLD, label)}  {status}")
+
+    if already and not _yn("Reconfigure? (current keys are saved)", default=False):
         return existing
 
-    if not _yn(f"\n── {label} ──\n  Enable this provider?", default=True):
+    if not _yn("Enable this provider?", default=True):
         if existing is not None:
             existing.enabled = False
             return existing
         return None
 
-    base_url = _text(
-        "  Base URL",
-        default=existing.base_url if (existing and existing.base_url) else defn["default_base_url"],
-    )
-
     if ptype == "ollama":
-        api_key = existing.api_key if existing else ""
+        is_local = _yn("Use local Ollama (no API key needed)?", default=True)
+        if is_local:
+            api_key = existing.api_key if existing else ""
+            base_url = _text(
+                "Base URL",
+                default=existing.base_url if (existing and existing.base_url) else "http://localhost:11434",
+            )
+        else:
+            base_url = _text(
+                "Base URL",
+                default=(
+                    existing.base_url
+                    if (existing and existing.base_url)
+                    else defn["default_base_url"]
+                ),
+            )
+            api_key = _secret_input("API Key" if not existing else "API Key (blank = keep current)")
     else:
-        api_key = _text(
-            "  API Key",
-            default=existing.api_key if existing else "",
-            secret=True,
+        base_url = _text(
+            "Base URL",
+            default=(
+                existing.base_url
+                if (existing and existing.base_url)
+                else defn["default_base_url"]
+            ),
         )
+        api_key = _secret_input("API Key" if not existing else "API Key (blank = keep current)")
 
-    # Test connection with retries
+    if not api_key and existing and existing.api_key:
+        api_key = existing.api_key
+
+    # Test connection with spinner
     tester = LLM_TESTERS[ptype]
+    spinner = Spinner("Testing connection…")
     models: list[str] = []
     for attempt in range(3):
-        print("  Testing connection...", end=" ")
-        sys.stdout.flush()
+        spinner.tick()
         try:
             ok, msg, models = tester(base_url, api_key)
         except httpx.RequestError as exc:
             ok, msg = False, f"Network error: {exc}"
+        except Exception as exc:
+            ok, msg = False, str(exc)
 
         if ok:
-            print(f"✅ {msg}")
+            spinner.done(True, msg)
             break
-        print(f"❌ {msg}")
+        spinner.done(False, msg)
         if attempt < 2:
-            if not _yn("  Retry?", default=True):
+            if not _yn("Retry?", default=True):
                 break
             if ptype != "ollama":
-                api_key = _text("  API Key", secret=True)
-            base_url = _text("  Base URL", default=base_url)
+                api_key = _secret_input("API Key")
+            base_url = _text("Base URL", default=base_url)
         else:
-            print("  Skipping this provider after 3 failed attempts.")
+            print(f"  {c(C.YELLOW, '⚠')} Skipping after 3 failed attempts.")
             return None
 
     # Model selection
@@ -293,12 +498,13 @@ def _configure_search(
     needs_key = defn.get("needs_api_key", True)
 
     already = existing is not None and existing.enabled
-    if already and not _yn(
-        f"\n── {label} ──\n  Reconfigure?", default=False
-    ):
+    status = c(C.GREEN, "✓ enabled") if already else c(C.DIM, "not configured")
+    print(f"\n  {c(C.BOLD, label)}  {status}")
+
+    if already and not _yn("Reconfigure?", default=False):
         return existing
 
-    if not _yn(f"\n── {label} ──\n  Enable this provider?", default=True):
+    if not _yn("Enable this provider?", default=True):
         if existing is not None:
             existing.enabled = False
             return existing
@@ -312,38 +518,38 @@ def _configure_search(
     )
 
     if needs_key:
-        api_key = _text(
-            "  API Key",
-            default=api_key,
-            secret=True,
-        )
+        api_key = _secret_input("API Key" if not api_key else "API Key (blank = keep current)")
+        if not api_key and existing and existing.api_key:
+            api_key = existing.api_key
 
     if defn.get("default_base_url"):
-        base_url = _text("  Base URL", default=base_url)
+        base_url = _text("Base URL", default=base_url)
 
-    # Test connection
+    # Test connection with spinner
     tester = SEARCH_TESTERS[ptype]
+    spinner = Spinner("Testing connection…")
     for attempt in range(3):
-        print("  Testing connection...", end=" ")
-        sys.stdout.flush()
+        spinner.tick()
         try:
-            ok, msg, _models = tester(base_url, api_key)
+            ok, msg, _unused = tester(base_url, api_key)
         except httpx.RequestError as exc:
             ok, msg = False, f"Network error: {exc}"
+        except Exception as exc:
+            ok, msg = False, str(exc)
 
         if ok:
-            print(f"✅ {msg}")
+            spinner.done(True, msg)
             break
-        print(f"❌ {msg}")
+        spinner.done(False, msg)
         if attempt < 2:
-            if not _yn("  Retry?", default=True):
+            if not _yn("Retry?", default=True):
                 break
             if needs_key:
-                api_key = _text("  API Key", secret=True)
+                api_key = _secret_input("API Key")
             if defn.get("default_base_url"):
-                base_url = _text("  Base URL", default=base_url)
+                base_url = _text("Base URL", default=base_url)
         else:
-            print("  Skipping this provider after 3 failed attempts.")
+            print(f"  {c(C.YELLOW, '⚠')} Skipping after 3 failed attempts.")
             return None
 
     return ProviderEntry(
@@ -367,22 +573,18 @@ def _set_priorities(settings: ProviderSettings, category: str) -> None:
         return
 
     label = "LLM" if category == "llm" else "Search"
-    print(f"\n── {label} Provider Priority ──")
-    print("  Set priority order. 1 = primary (tried first).")
-    for i, p in enumerate(enabled, 1):
-        extra = f" [{p.selected_model}]" if p.selected_model else ""
-        print(f"    {i}. {p.display_name}{extra}")
-
+    print(f"\n  {c(C.CYAN + C.BOLD, '─── ' + label + ' Provider Priority ───')}")
+    print(f"  {c(C.DIM, 'Set priority (1 = primary, tried first).')}")
     for p in enabled:
-        while True:
-            raw = input(f"  Priority for '{p.display_name}' [{p.priority}]: ").strip()
-            if not raw:
-                break
+        extra = c(C.DIM, f" [{p.selected_model}]") if p.selected_model else ""
+        current = c(C.YELLOW, str(p.priority))
+        lbl = c(C.BOLD, p.display_name)
+        raw = input(f"  {c(C.CYAN, '▸')} Priority for '{lbl}'{extra} [{current}]: ").strip()
+        if raw:
             try:
                 p.priority = int(raw)
-                break
             except ValueError:
-                print("  Enter a number.")
+                print(f"  {c(C.RED, '✗')} Enter a number.")
 
 
 # ── .env updater ──────────────────────────────────────────────────────
@@ -400,6 +602,36 @@ ENV_MAP: dict[str, dict[str, str]] = {
         "selected_model": "ARGUS_OPENROUTER_MODEL",
     },
     "ollama": {"base_url": "ARGUS_OLLAMA_BASE_URL", "selected_model": "ARGUS_OLLAMA_MODEL"},
+    "openai": {
+        "api_key": "ARGUS_OPENAI_API_KEY",
+        "base_url": "ARGUS_OPENAI_BASE_URL",
+        "selected_model": "ARGUS_OPENAI_MODEL",
+    },
+    "anthropic": {
+        "api_key": "ARGUS_ANTHROPIC_API_KEY",
+        "base_url": "ARGUS_ANTHROPIC_BASE_URL",
+        "selected_model": "ARGUS_ANTHROPIC_MODEL",
+    },
+    "google_ai_studio": {
+        "api_key": "ARGUS_GOOGLE_AI_STUDIO_API_KEY",
+        "base_url": "ARGUS_GOOGLE_AI_STUDIO_BASE_URL",
+        "selected_model": "ARGUS_GOOGLE_AI_STUDIO_MODEL",
+    },
+    "litellm": {
+        "api_key": "ARGUS_LITELLM_API_KEY",
+        "base_url": "ARGUS_LITELLM_BASE_URL",
+        "selected_model": "ARGUS_LITELLM_MODEL",
+    },
+    "together_ai": {
+        "api_key": "ARGUS_TOGETHER_AI_API_KEY",
+        "base_url": "ARGUS_TOGETHER_AI_BASE_URL",
+        "selected_model": "ARGUS_TOGETHER_AI_MODEL",
+    },
+    "deepseek": {
+        "api_key": "ARGUS_DEEPSEEK_API_KEY",
+        "base_url": "ARGUS_DEEPSEEK_BASE_URL",
+        "selected_model": "ARGUS_DEEPSEEK_MODEL",
+    },
     "openai_compatible": {
         "api_key": "ARGUS_OPENAI_COMPATIBLE_API_KEY",
         "base_url": "ARGUS_OPENAI_COMPATIBLE_BASE_URL",
@@ -407,6 +639,7 @@ ENV_MAP: dict[str, dict[str, str]] = {
     },
     "serpapi": {"api_key": "ARGUS_SERPAPI_API_KEY"},
     "firecrawl": {"api_key": "ARGUS_FIRECRAWL_API_KEY"},
+    "tavily": {"api_key": "ARGUS_TAVILY_API_KEY"},
 }
 
 
@@ -415,7 +648,7 @@ def _update_dotenv(settings: ProviderSettings) -> None:
 
     env_path = Path(".env")
     if not env_path.exists():
-        if not _yn("\n  No .env file found. Create one?", default=True):
+        if not _yn("No .env file found. Create one?", default=True):
             return
         env_path.write_text("", encoding="utf-8")
 
@@ -447,7 +680,54 @@ def _update_dotenv(settings: ProviderSettings) -> None:
                 count += 1
 
     env_path.write_text("".join(lines), "utf-8")
-    print(f"  ✅ Updated {env_path.name} ({count} values)")
+    print(f"  {c(C.GREEN, '✓')} Updated {env_path.name} ({count} values)")
+
+
+# ── Multi-select provider picker ─────────────────────────────────────
+
+
+def _select_providers(
+    title: str, defs: list[dict[str, Any]], existing: ProviderSettings
+) -> list[int]:
+    """Show numbered list of providers, let user pick which to configure.
+
+    Returns indices into *defs* that the user selected.
+    Supports: ``all``, ``none``, ``1,3,5``, ``1-5``, ``1 3 5``.
+    """
+    print(f"\n  {c(C.CYAN + C.BOLD, f'─── {title} ───')}")
+    for i, defn in enumerate(defs, 1):
+        ptype = defn["provider_type"]
+        ex = existing.by_type(ptype)
+        already = ex is not None and ex.enabled and bool(ex.api_key)
+        status = c(C.GREEN, "✓") if already else c(C.DIM, " ")
+        print(f"    {c(C.YELLOW, str(i) + '.')} [{status}] {defn['display_name']}")
+
+    sel_prompt = f"  {c(C.CYAN, '▸')} Select (e.g. '1,3,5', '1-5', or 'all'): "
+    raw = _input_line(sel_prompt).strip().lower()
+    if raw in ("", "all"):
+        return list(range(len(defs)))
+    if raw in ("none", "0"):
+        return []
+
+    selected: set[int] = set()
+    for part in raw.replace(",", " ").split():
+        if "-" in part:
+            try:
+                a_s, b_s = part.split("-", 1)
+                a, b = int(a_s), int(b_s)
+                for n in range(a, b + 1):
+                    if 1 <= n <= len(defs):
+                        selected.add(n - 1)
+            except ValueError:
+                pass
+        else:
+            try:
+                n = int(part)
+                if 1 <= n <= len(defs):
+                    selected.add(n - 1)
+            except ValueError:
+                pass
+    return sorted(selected)
 
 
 # ── Main ──────────────────────────────────────────────────────────────
@@ -457,47 +737,53 @@ def run_onboard() -> None:
     try:
         _run_onboard_impl()
     except KeyboardInterrupt:
-        print("\n\n  Setup cancelled. No changes saved.\n")
+        print(f"\n\n  {c(C.YELLOW, 'Setup cancelled. No changes saved.')}\n")
         sys.exit(0)
 
 
 def _run_onboard_impl() -> None:
-    print(WELCOME)
+    print(BANNER)
 
-    settings = load_settings()
+    provider_settings = load_settings()
     dirty = False
 
-    # ── LLM providers ──
-    print("\n  ─── LLM Providers ───\n")
-    for defn in DEFAULT_LLM_DEFS:
-        ptype = defn["provider_type"]
-        existing = settings.by_type(ptype)
-        result = _configure_llm(defn, existing)
-        if result is not None:
-            settings.upsert(result)
-            dirty = True
+    # ── LLM providers — pick which to configure ──
+    llm_indices = _select_providers("LLM Providers", DEFAULT_LLM_DEFS, provider_settings)
+    if llm_indices:
+        for i, idx in enumerate(llm_indices, 1):
+            defn = DEFAULT_LLM_DEFS[idx]
+            ptype = defn["provider_type"]
+            existing = provider_settings.by_type(ptype)
+            result = _configure_llm(defn, existing, i, len(llm_indices))
+            if result is not None:
+                provider_settings.upsert(result)
+                dirty = True
 
-    # ── Search providers ──
-    print("\n  ─── Search / Tool Providers ───\n")
-    for defn in SEARCH_PROVIDER_DEFS:
-        ptype = defn["provider_type"]
-        existing = settings.by_type(ptype)
-        result = _configure_search(defn, existing)
-        if result is not None:
-            settings.upsert(result)
-            dirty = True
+    # ── Search providers — pick which to configure ──
+    search_indices = _select_providers(
+        "Search Providers", SEARCH_PROVIDER_DEFS, provider_settings
+    )
+    if search_indices:
+        for idx in search_indices:
+            defn = SEARCH_PROVIDER_DEFS[idx]
+            ptype = defn["provider_type"]
+            existing = provider_settings.by_type(ptype)
+            result = _configure_search(defn, existing)
+            if result is not None:
+                provider_settings.upsert(result)
+                dirty = True
 
     if not dirty:
-        print("No providers configured. Exiting.\n")
+        print(f"\n  {c(C.YELLOW, 'No providers configured. Exiting.')}\n")
         return
 
-    _set_priorities(settings, "llm")
-    _set_priorities(settings, "search")
-    save_settings(settings)
-    print(f"\n  ✅ Configuration saved to {CONFIG_PATH}")
+    _set_priorities(provider_settings, "llm")
+    _set_priorities(provider_settings, "search")
+    save_settings(provider_settings)
+    print(f"\n  {c(C.GREEN, '✓')} Configuration saved to {c(C.BOLD, str(CONFIG_PATH))}")
 
-    if _yn("\n  Also write keys to .env file?", default=True):
-        _update_dotenv(settings)
+    if _yn("Also write keys to .env file?", default=True):
+        _update_dotenv(provider_settings)
 
-    print("\n  Done! You can re-run this anytime with:")
-    print("    python -m argus onboard\n")
+    print(f"\n  {c(C.GREEN + C.BOLD, 'Done!')} Re-run anytime with:")
+    print(f"    {c(C.CYAN, 'python -m argus onboard')}\n")

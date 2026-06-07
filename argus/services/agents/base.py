@@ -51,6 +51,7 @@ class BaseAgent(ABC):
     def _record_cost(self, amount: float, category: str = "llm") -> None:
         if self._cost_tracker is not None:
             self._cost_tracker.record_cost(amount, category=category)
+            self._cost_tracker.check_budget()
 
     def _emit_facts(
         self,

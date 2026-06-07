@@ -50,6 +50,12 @@ class LLMProviderType(StrEnum):
     OLLAMA = "ollama"
     GROQ = "groq"
     OPENROUTER = "openrouter"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    GOOGLE_AI_STUDIO = "google_ai_studio"
+    LITELLM = "litellm"
+    TOGETHER_AI = "together_ai"
+    DEEPSEEK = "deepseek"
     OPENAI_COMPATIBLE = "openai_compatible"
 
 

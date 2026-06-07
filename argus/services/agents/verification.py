@@ -10,6 +10,8 @@ from argus.shared.models import AgentType, Fact, TaskStep
 
 logger = logging.getLogger(__name__)
 
+MAX_CLAIMS_PER_ENTITY = 10
+
 
 class VerificationAgent(BaseAgent):
     def __init__(
@@ -62,6 +64,17 @@ class VerificationAgent(BaseAgent):
             if len(entity_claims) < 2:
                 continue
 
+            if len(entity_claims) > MAX_CLAIMS_PER_ENTITY:
+                logger.warning(
+                    "Truncating entity claims for conflict check",
+                    extra={
+                        "entity": _entity_name,
+                        "total": len(entity_claims),
+                        "cap": MAX_CLAIMS_PER_ENTITY,
+                    },
+                )
+                entity_claims = entity_claims[:MAX_CLAIMS_PER_ENTITY]
+
             for i in range(len(entity_claims)):
                 for j in range(i + 1, len(entity_claims)):
                     a = entity_claims[i]
@@ -70,6 +83,7 @@ class VerificationAgent(BaseAgent):
                     if a.get("attribute") != b.get("attribute"):
                         continue
 
+                    self._check_budget(estimated_cost=0.01)
                     result = self._check_conflict(a, b)
                     if result is not None:
                         conflict_facts.append(result)
