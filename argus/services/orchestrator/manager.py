@@ -31,10 +31,17 @@ class ResearchManager:
                 return None
         return self._redis
 
-    async def create_task(self, query: str) -> ResearchTask:
+    async def create_task(
+        self,
+        query: str,
+        max_sources: int = 50,
+        max_duration_minutes: int = 30,
+    ) -> ResearchTask:
         task = ResearchTask(
             task_id=uuid4(),
             query=query,
+            max_sources=max_sources,
+            max_duration_minutes=max_duration_minutes,
             status=ResearchStatus.PLANNING,
         )
         task_id_str = str(task.task_id)

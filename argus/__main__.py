@@ -41,7 +41,9 @@ def _run_kg_writer() -> None:
 def main() -> None:
     import sys
 
-    if "onboard" in sys.argv:
+    # Route CLI subcommands (onboard, research, etc.) to the CLI parser
+    cli_commands = {"onboard", "research"}
+    if len(sys.argv) > 1 and sys.argv[1] in cli_commands:
         from argus.cli import main as cli_main
         cli_main()
         return

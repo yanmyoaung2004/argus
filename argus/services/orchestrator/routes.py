@@ -22,7 +22,11 @@ def init_manager(manager: ResearchManager) -> None:
 async def create_research(req: ResearchRequest) -> ResearchResponse:
     if _manager is None:
         raise HTTPException(status_code=503, detail="Research manager not initialized")
-    task = await _manager.create_task(req.query)
+    task = await _manager.create_task(
+        req.query,
+        max_sources=req.max_sources,
+        max_duration_minutes=req.max_duration_minutes,
+    )
     return ResearchResponse(
         task_id=task.task_id,
         status=task.status.value,

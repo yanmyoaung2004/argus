@@ -73,6 +73,8 @@ class ResearchPlan(BaseModel):
 class ResearchTask(BaseModel):
     task_id: UUID = Field(default_factory=uuid4)
     query: str
+    max_sources: int = 50
+    max_duration_minutes: int = 30
     status: ResearchStatus = ResearchStatus.PENDING
     plan: ResearchPlan | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -158,6 +160,8 @@ class CostReport(BaseModel):
 
 class ResearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
+    max_sources: int = Field(default=50, ge=1, le=500)
+    max_duration_minutes: int = Field(default=30, ge=1, le=360)
 
 
 class ResearchResponse(BaseModel):
