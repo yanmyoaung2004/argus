@@ -1,8 +1,61 @@
 # Argus — Autonomous Research Agent
 
-> Thinks in graphs, cites everything, shows its work.
+**Thinks in graphs, cites everything, shows its work.**
 
-Argus is an event-driven, multi-agent research system. You give it a question, it plans a strategy, dispatches scout/deep-dive/verification agents via Redis Streams, builds a knowledge graph in SQLite, and produces an interactive HTML report with a D3.js force-directed graph — all for under $0.50 per research.
+Argus is an event-driven, multi-agent research system. Submit a question; it plans a strategy, dispatches specialized agents via Redis Streams, builds a knowledge graph in SQLite, and produces an interactive HTML report with provenance — all for under $0.50 per query.
+
+---
+
+## System Architecture
+
+Argus separates orchestration from execution through three core layers.
+
+### 1. The Dispatcher (Orchestrator)
+
+The central coordinator manages the research lifecycle:
+
+- **Planner** — classifies queries (competitive analysis, tech comparison, academic survey) and produces a step DAG
+- **Resource Arbitration** — pushes plan steps to agent-specific Redis Streams with bounded consumer groups
+- **Lifespan Management** — idle timeout detection, graceful shutdown, task status tracking
+
+### 2. The Agent Pool (Execution)
+
+Specialized agents consume from their assigned stream and emit structured facts:
+
+| Agent | Responsibility | Consumes From |
+|-------|---------------|---------------|
+| Scout | Web search → entities + sources | `tasks:scout` |
+| Deep-Dive | Page scrape → claim extraction | `tasks:deep_dive` |
+| Verification | Conflict detection across claims | `tasks:verification` |
+| Synthesis | Entity resolution + relationship edges | `tasks:synthesis` |
+
+All agents share a common base with budget enforcement, circuit breaker, and idempotency guarantees.
+
+### 3. The Knowledge Layer (Persistence)
+
+A write-through pipeline that materializes agent output:
+
+```
+Agent → Redis `facts` stream → KG Writer (batch consumer) → SQLite
+```
+
+- **Knowledge Graph** — entities, claims, sources, edges with recursive CTE support
+- **Vector Index** — sqlite-vec HNSW for ANN similarity search (384-dim embeddings)
+- **Full-Text Search** — SQLite FTS5 over entity names and claim text
+- **Confidence Scoring** — `base(0.5) + source_boost + credibility_boost + recency_boost - conflict_penalty`
+
+---
+
+## Operational Workflow
+
+1. **Submit** — query enters via CLI or HTTP POST
+2. **Plan** — the planner classifies, decomposes, and pushes steps to Redis streams
+3. **Execute** — agents consume steps in parallel, publish facts and progress events
+4. **Persist** — KG Writer batches facts and writes to SQLite on a 50ms/100-fact cadence
+5. **Detect Completion** — the research manager polls progress streams; when all steps report done, it finalizes the task
+6. **Report** — Markdown and interactive HTML (D3.js force-directed graph) are generated and saved to `~/.argus/reports/`
+
+All external calls (LLM, search, scrape) pass through retry + circuit breaker layers. The cost tracker enforces a hard cap of $0.50/task with warnings at 60%.
 
 ---
 
@@ -54,8 +107,8 @@ python -m argus onboard
 ```
 
 The wizard walks you through:
-- **LLM providers**: Groq, Ollama, OpenRouter, OpenAI-compatible
-- **Search providers**: DuckDuckGo, SerpAPI, Firecrawl
+- **LLM providers**: Groq, Ollama, OpenRouter, OpenAI-compatible, Anthropic, Google AI Studio, DeepSeek, Together AI, LiteLLM
+- **Search providers**: DuckDuckGo, SerpAPI, Firecrawl, Tavily
 - API key entry (masked) with **instant validation**
 - Model selection from live API data
 - Provider priority ordering (which to try first)
@@ -132,6 +185,25 @@ python -m argus list
 python -m argus status <task_id>
 ```
 
+### Stage profile configuration
+
+Override default routing per task type:
+
+```bash
+python -m argus profile          # Interactive assignment
+python -m argus profile-list     # Show current assignments
+python -m argus profile-clear    # Clear all assignments
+```
+
+### Search provider configuration
+
+Configure fallback priority and settings:
+
+```bash
+python -m argus search           # Interactive config
+python -m argus search-list      # Show current config
+```
+
 ### Run a research query via API
 
 ```bash
@@ -175,6 +247,8 @@ Open the HTML in a browser for the full interactive view with:
 - Expandable claim cards with confidence scores
 - Source credibility breakdown
 - Cost report
+
+Reports are also auto-saved to `~/.argus/reports/` upon task completion.
 
 ### Provide feedback
 
@@ -220,41 +294,6 @@ Returns hit rate, total entries, kept entries, size, and expiry info.
 
 ---
 
-## Architecture
-
-```
-Query → Planner → Redis Streams → Agents → Write Queue → KG Writer → SQLite
-                                                              ↓
-                                                     SSE Streamer → Frontend
-```
-
-- **Planner** — classifies the query (competitive analysis, tech comparison, academic) and produces a step DAG (discover → extract → verify)
-- **Scout Agent** — searches the web via DuckDuckGo, emits entities and source facts
-- **Deep-Dive Agent** — scrapes pages via httpx/Playwright, batch-extracts claims via LLM
-- **Verification Agent** — detects conflicting claims on the same entity+attribute, emits conflict edges
-- **Synthesis Agent** — continuous entity resolution (fuzzy matching via SequenceMatcher + LLM), entity merging, RELATED_TO edge creation
-- **KG Writer** — single-process batch consumer (50ms or 100 facts), writes to SQLite
-- **Confidence Scoring** — auto-calculated on every claim: `base(0.5) + source_boost + credibility_boost + recency_boost - conflict_penalty`
-- **Vector Store** — sqlite-vec HNSW index for ANN similarity search (384-dim embeddings)
-- **Report Generator** — Markdown or interactive HTML with D3.js force-directed graph
-
-### Cost-aware LLM routing
-
-Every call routes through a task-type-aware selector with ordered fallback:
-
-| Task Type | Primary | Fallback 1 | Fallback 2 |
-|-----------|---------|------------|------------|
-| Planning | Ollama | Groq | OpenRouter |
-| Scout | Groq | Ollama | OpenRouter |
-| Deep-dive | Ollama | Groq | OpenRouter |
-| Verification | Groq | Ollama | OpenRouter |
-| Synthesis | Ollama | Groq | OpenRouter |
-| Conflict Resolution | Groq | OpenRouter | OpenAI-compatible |
-
-Prompt compression (30-50% reduction) is automatically applied for Ollama and Groq calls.
-
----
-
 ## Project Structure
 
 ```
@@ -264,11 +303,13 @@ argus/
 │   ├── __init__.py                # CLI entry point
 │   ├── onboard.py                 # Interactive provider setup wizard
 │   ├── research.py                # Submit research + watch SSE progress
-│   └── status.py                  # List tasks + show task status
+│   ├── status.py                  # List tasks + show task status
+│   ├── profile.py                 # Stage profile configuration
+│   └── search.py                  # Search provider configuration
 ├── llm/
 │   ├── provider_config.py         # Provider settings model + JSON persistence
-│   ├── providers.py               # Ollama, Groq, OpenRouter, OpenAI-compatible
-│   ├── router.py                  # Cost-aware LLM router with fallback
+│   ├── providers.py               # Ollama, Groq, OpenRouter, OpenAI-compatible, Anthropic, etc.
+│   ├── router.py                  # Cost-aware LLM router with fallback + stage profiles
 │   ├── circuit_breaker.py         # Redis-backed per-provider circuit breaker
 │   ├── compressor.py              # Prompt compressor (filler, instructions, JSON)
 │   ├── schema.py                  # Structured output Pydantic models
@@ -277,17 +318,17 @@ argus/
 │   ├── agents/
 │   │   ├── base.py                # Base agent (budget, circuit breaker, idempotency)
 │   │   ├── scout.py               # Web search → entities/sources
-│   │   ├── deep_dive.py           # Scrape → LLM extraction
-│   │   ├── verification.py        # Conflict detection
+│   │   ├── deep_dive.py           # Scrape → LLM extraction (with source cache)
+│   │   ├── verification.py        # Conflict detection (capped at 10 claims/entity)
 │   │   └── synthesis.py           # Entity resolution + edge creation
 │   ├── tools/
-│   │   ├── search.py              # DuckDuckGo → SerpAPI → Firecrawl
+│   │   ├── search.py              # DuckDuckGo → SerpAPI → Firecrawl → Tavily
 │   │   ├── scraper.py             # httpx → Playwright → Firecrawl
 │   │   ├── parser.py              # Document parser (HTML, PDF, text)
 │   │   ├── cost_tracker.py        # Budget enforcement via Redis
 │   │   └── credibility.py         # Source credibility scoring + feedback
 │   ├── orchestrator/
-│   │   ├── manager.py             # Research lifecycle management
+│   │   ├── manager.py             # Research lifecycle + completion detection
 │   │   ├── agent_runner.py        # Redis Streams consumer group dispatcher
 │   │   ├── routes.py              # FastAPI routes
 │   │   ├── sse.py                 # SSE streamer
@@ -313,7 +354,7 @@ argus/
 │   ├── templates/                 # Jinja2 HTML report template
 │   └── static/                    # D3.js graph viz, browser SSE watcher
 ├── shared/
-│   ├── config.py                  # pydantic-settings (50+ params)
+│   ├── config.py                  # pydantic-settings (50+ params, ARGUS_ prefix)
 │   ├── models.py                  # All data models
 │   ├── logging.py                 # structlog setup
 │   └── idempotency.py             # UUID v7 + SQLite dedup
@@ -324,8 +365,49 @@ docs/
 ├── architecture.md                # Full architecture with diagrams
 ├── graph_schema.md                # SQLite schema documentation
 ├── agent_protocols.md             # Redis stream protocols, idempotency
-└── performance.md                 # Performance tuning guide
+├── performance.md                 # Performance tuning guide
+├── manual.md                      # Full user manual
+└── solution.md                    # Problem/solution/comparison document
 ```
+
+---
+
+## Cost-Aware LLM Routing
+
+Every call routes through a task-type-aware selector with ordered fallback:
+
+| Task Type | Primary | Fallback Chain |
+|-----------|---------|---------------|
+| Planning | Ollama | Groq → OpenRouter → OpenAI → Anthropic → Google AI Studio → DeepSeek → Together AI → LiteLLM |
+| Scout | Groq | Ollama → OpenRouter → OpenAI → Google AI Studio → DeepSeek → Together AI |
+| Deep-Dive | Ollama | Groq → OpenRouter → OpenAI → Anthropic → Google AI Studio → DeepSeek → Together AI → LiteLLM |
+| Verification | Groq | Ollama → OpenRouter → OpenAI → Anthropic → Google AI Studio → DeepSeek |
+| Synthesis | Ollama | Groq → OpenRouter → OpenAI → Google AI Studio → DeepSeek → Together AI → LiteLLM |
+| Conflict Resolution | Groq | OpenRouter → OpenAI → Anthropic → Google AI Studio → DeepSeek → OpenAI-Compatible |
+
+Stage profiles (`~/.argus/stage_profiles.json`) can override these defaults per task type. If set, the assigned provider+model is tried first before the default fallback chain.
+
+Prompt compression (30-50% reduction) is automatically applied for Ollama and Groq calls. LLM responses are cached by SHA256 prompt hash and reused across tasks.
+
+---
+
+## Cost
+
+Argus is designed to run for **under $0.50 per research query**:
+
+| Service | Cost | When used |
+|---------|------|-----------|
+| Ollama (local) | Free | Default LLM |
+| DuckDuckGo | Free | Default search |
+| httpx + BeautifulSoup | Free | Default scrape |
+| Groq free tier | Free | Scout, verification tasks |
+| SQLite + sqlite-vec | Free | Knowledge graph + vector store |
+| SerpAPI | ~$0.01/query | Fallback if DDG fails |
+| OpenRouter | ~$0.0001-0.01/call | Paid LLM fallback |
+| Firecrawl | ~$0.003/page | Tertiary scrape fallback |
+| Tavily | ~$0.005/search | Last-resort search fallback |
+
+The cost tracker enforces the hard cap at runtime, raises `BudgetExceededError` before overshoot, and logs a warning at 60%. Both LLM calls and source scrapes are cached to eliminate redundant spending.
 
 ---
 
@@ -343,16 +425,13 @@ pytest tests/unit/test_compressor.py -v
 
 # Run integration tests
 pytest tests/integration/ -v
-```
 
-Current test count: **211 tests** — all passing
-
-### Lint & type check
-
-```bash
+# Lint & type check
 ruff check .
 mypy .
 ```
+
+Current test count: **211 tests** across unit, integration, and evaluation suites.
 
 ---
 
@@ -384,6 +463,7 @@ All configuration is via environment variables with prefix `ARGUS_`. Key setting
 | `ARGUS_GROQ_API_KEY` | — | Groq API key |
 | `ARGUS_SERPAPI_API_KEY` | — | SerpAPI search key |
 | `ARGUS_FIRECRAWL_API_KEY` | — | Firecrawl API key |
+| `ARGUS_TAVILY_API_KEY` | — | Tavily search key |
 | `ARGUS_BUDGET_PER_RESEARCH` | `0.50` | Hard cost cap per query |
 | `ARGUS_AGENT_CONCURRENCY` | `2` | Parallel agent workers |
 
@@ -391,28 +471,10 @@ See `.env.example` for the full list.
 
 ---
 
-## Cost
-
-Argus is designed to run for **under $0.50 per research query**:
-
-| Service | Cost | When used |
-|---------|------|-----------|
-| Ollama (local) | Free | Default LLM |
-| DuckDuckGo | Free | Default search |
-| httpx + BeautifulSoup | Free | Default scrape |
-| Groq free tier | Free | Scout, verification tasks |
-| SQLite + sqlite-vec | Free | Knowledge graph + vector store |
-| SerpAPI | ~$0.01/query | Fallback if DDG fails |
-| OpenRouter | ~$0.0001-0.01/call | Paid LLM fallback |
-| Firecrawl | ~$0.003/page | Tertiary scrape fallback |
-
-The cost tracker enforces the hard cap at runtime and logs a warning at 60%.
-
----
-
 ## Docs
 
 - [`docs/manual.md`](docs/manual.md) — Full user manual (setup, config, usage, troubleshooting)
+- [`docs/solution.md`](docs/solution.md) — Problem space, how Argus solves it, cost analysis, comparisons
 - [`docs/architecture.md`](docs/architecture.md) — Full system architecture
 - [`docs/graph_schema.md`](docs/graph_schema.md) — Knowledge graph schema
 - [`docs/agent_protocols.md`](docs/agent_protocols.md) — Redis stream protocols
