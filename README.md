@@ -45,9 +45,27 @@ ollama pull llama3.2:3b
 ollama serve
 ```
 
-### 4. Configure
+### 4. Configure — CLI Onboarding (recommended)
 
-Copy `.env.example` to `.env` and adjust:
+Run the interactive setup wizard to configure LLM providers, API keys, models, and search tools:
+
+```bash
+python -m argus onboard
+```
+
+The wizard walks you through:
+- **LLM providers**: Groq, Ollama, OpenRouter, OpenAI-compatible
+- **Search providers**: DuckDuckGo, SerpAPI, Firecrawl
+- API key entry (masked) with **instant validation**
+- Model selection from live API data
+- Provider priority ordering (which to try first)
+- Optional `.env` file update
+
+Keys are tested immediately — invalid keys are rejected and you can retry.
+
+### 5. (Alternative) Manual `.env` setup
+
+Copy `.env.example` to `.env` and edit:
 
 ```bash
 copy .env.example .env        # Windows
@@ -61,7 +79,7 @@ ARGUS_GROQ_API_KEY=gsk_...
 
 All variables have safe defaults — only API keys for paid providers are required.
 
-### 5. Run the server
+### 6. Run the server
 
 **Important:** Start the app with the following command so that agent workers (scout, deep-dive, verification, synthesis, KG writer) run alongside the web server:
 
@@ -211,7 +229,11 @@ Prompt compression (30-50% reduction) is automatically applied for Ollama and Gr
 ```
 argus/
 ├── app.py                         # FastAPI app, health, cache stats endpoints
+├── cli/
+│   ├── __init__.py                # CLI entry point
+│   └── onboard.py                 # Interactive provider setup wizard
 ├── llm/
+│   ├── provider_config.py         # Provider settings model + JSON persistence
 │   ├── providers.py               # Ollama, Groq, OpenRouter, OpenAI-compatible
 │   ├── router.py                  # Cost-aware LLM router with fallback
 │   ├── circuit_breaker.py         # Redis-backed per-provider circuit breaker
@@ -290,7 +312,7 @@ pytest tests/unit/test_compressor.py -v
 pytest tests/integration/ -v
 ```
 
-Current test count: **164 tests** (158 unit + 6 integration)
+Current test count: **207 tests** (4 known pre-existing failures deselected)
 
 ### Lint & type check
 
@@ -318,7 +340,7 @@ docker compose -f infra/docker-compose.yml up --build -d
 
 The app is available at `http://localhost:8000`.
 
-### Configuration
+### Manual Configuration
 
 All configuration is via environment variables with prefix `ARGUS_`. Key settings:
 
@@ -327,6 +349,8 @@ All configuration is via environment variables with prefix `ARGUS_`. Key setting
 | `ARGUS_REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
 | `ARGUS_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint |
 | `ARGUS_GROQ_API_KEY` | — | Groq API key |
+| `ARGUS_SERPAPI_API_KEY` | — | SerpAPI search key |
+| `ARGUS_FIRECRAWL_API_KEY` | — | Firecrawl API key |
 | `ARGUS_BUDGET_PER_RESEARCH` | `0.50` | Hard cost cap per query |
 | `ARGUS_AGENT_CONCURRENCY` | `2` | Parallel agent workers |
 
@@ -355,6 +379,7 @@ The cost tracker enforces the hard cap at runtime and logs a warning at 60%.
 
 ## Docs
 
+- [`docs/manual.md`](docs/manual.md) — Full user manual (setup, config, usage, troubleshooting)
 - [`docs/architecture.md`](docs/architecture.md) — Full system architecture
 - [`docs/graph_schema.md`](docs/graph_schema.md) — Knowledge graph schema
 - [`docs/agent_protocols.md`](docs/agent_protocols.md) — Redis stream protocols

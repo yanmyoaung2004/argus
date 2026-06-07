@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     # SerpAPI (paid search fallback)
     serpapi_api_key: str = ""
 
+    # Firecrawl (web scraping / search fallback)
+    firecrawl_api_key: str = ""
+    firecrawl_base_url: str = "https://api.firecrawl.dev"
+
     # DuckDuckGo rate limiting
     ddg_rate_limit_per_second: float = 1.0
 

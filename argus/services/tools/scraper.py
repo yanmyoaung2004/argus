@@ -182,10 +182,9 @@ class PlaywrightScraper(ScrapeProvider):
 
 
 class FirecrawlScraper(ScrapeProvider):
-    BASE_URL = "https://api.firecrawl.dev/v1"
-
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
         self._api_key = api_key or ""
+        self._base_url = (base_url or settings.firecrawl_base_url).rstrip("/") + "/v2"
         self._client = httpx.Client(timeout=30.0)
 
     @retry(
@@ -199,15 +198,17 @@ class FirecrawlScraper(ScrapeProvider):
         start = time.monotonic()
 
         response = self._client.post(
-            f"{self.BASE_URL}/scrape",
-            json={"url": url, "formats": ["markdown"]},
+            f"{self._base_url}/scrape",
+            json={"url": url, "formats": ["markdown"], "onlyMainContent": True},
             headers={"Authorization": f"Bearer {self._api_key}"},
         )
         response.raise_for_status()
         data: dict[str, Any] = response.json()  # noqa: ANN401
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        markdown = data.get("data", {}).get("markdown", "")
+        markdown = ""
+        if "data" in data:
+            markdown = data["data"].get("markdown", "")
         content_hash = sha256(markdown.encode()).hexdigest()
 
         return ScrapeResponse(
@@ -242,8 +243,11 @@ class WebScraper:
         if result.content and result.content.markdown.strip():
             return result
 
-        if settings.groq_api_key:
-            self._firecrawl = FirecrawlScraper(api_key=settings.groq_api_key)
+        if settings.firecrawl_api_key:
+            self._firecrawl = FirecrawlScraper(
+                api_key=settings.firecrawl_api_key,
+                base_url=settings.firecrawl_base_url,
+            )
             result = self._firecrawl.scrape(url)
 
         return result

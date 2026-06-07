@@ -151,7 +151,7 @@ class WebSearch:
         try:
             return self._duckduckgo.search(query, max_results=max_results)
         except Exception:
-            if settings.groq_api_key:
+            if settings.serpapi_api_key:
                 try:
                     return self._get_serpapi().search(query, max_results=max_results)
                 except Exception:

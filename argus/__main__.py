@@ -41,6 +41,11 @@ def _run_kg_writer() -> None:
 def main() -> None:
     import sys
 
+    if "onboard" in sys.argv:
+        from argus.cli import main as cli_main
+        cli_main()
+        return
+
     workers_only = "--workers-only" in sys.argv
 
     threads: list[threading.Thread] = []
@@ -72,7 +77,7 @@ def main() -> None:
             logger.info("Shutting down workers.")
     else:
         logger.info("Launching HTTP server...")
-        port = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else settings.app_port
+        port = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else settings.app_port  # noqa: E501
         uvicorn.run(
             "argus.app:app",
             host=settings.app_host,
