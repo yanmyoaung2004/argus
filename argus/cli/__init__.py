@@ -19,6 +19,10 @@ def main() -> None:
     from argus.cli.research import add_subparser as add_research_subparser
     add_research_subparser(subparsers)
 
+    # list, status
+    from argus.cli.status import add_subparser as add_status_subparser
+    add_status_subparser(subparsers)
+
     args = parser.parse_args()
 
     if args.command is None:

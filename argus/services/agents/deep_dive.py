@@ -62,14 +62,19 @@ class DeepDiveAgent(BaseAgent):
         urls = self._get_source_urls_for_task(task_id)
         if not urls:
             import time
-            for attempt in range(5):
+            delays = [5, 10, 20, 30, 60]
+            for attempt, delay in enumerate(delays, start=1):
                 logger.info(
                     "Waiting for sources to appear in KG",
-                    extra={"step_id": step.id, "attempt": attempt + 1},
+                    extra={"step_id": step.id, "attempt": attempt, "wait_seconds": delay},
                 )
-                time.sleep(2)
+                time.sleep(delay)
                 urls = self._get_source_urls_for_task(task_id)
                 if urls:
+                    logger.info(
+                        "Sources found after waiting",
+                        extra={"step_id": step.id, "attempt": attempt, "count": len(urls)},
+                    )
                     break
             if not urls:
                 logger.info("No sources to deep-dive after waiting", extra={"step_id": step.id})

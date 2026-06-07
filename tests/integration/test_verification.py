@@ -21,7 +21,10 @@ def mock_claims_for_verification() -> list[dict[str, object]]:
 @pytest.mark.asyncio
 async def test_verification_no_claims(agent: VerificationAgent) -> None:
     step = TaskStep(id=1, type=TaskType.VERIFY, goal="Verify", agent=AgentType.VERIFICATION, task_id="test-no-claims", status=TaskStepStatus.RUNNING)
-    with patch.object(agent, "_get_claims_for_task", return_value=[]):
+    with (
+        patch.object(agent, "_get_claims_for_task", return_value=[]),
+        patch("time.sleep"),
+    ):
         facts = await agent.run(step)
     assert len(facts) == 0
 

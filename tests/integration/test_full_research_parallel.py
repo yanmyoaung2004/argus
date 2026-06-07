@@ -59,7 +59,7 @@ async def test_agent_runner_consumes_messages(fake_redis: FakeRedis) -> None:
 
     with patch.object(runner, "_agent") as mock_agent:
         fake_redis.queue_message(
-            "tasks", runner.CONSUMER_GROUP, "scout-worker-1",
+            runner.STREAM, runner.CONSUMER_GROUP, "scout-worker-1",
             "msg-1",
             {
                 b"idempotency_key": b"key-1",
@@ -110,7 +110,7 @@ async def test_agent_runner_pushes_to_dlq_on_failure(fake_redis: FakeRedis) -> N
         mock_agent.run.side_effect = RuntimeError("LLM call failed")
 
         fake_redis.queue_message(
-            "tasks", runner.CONSUMER_GROUP, "verify-worker-1",
+            runner.STREAM, runner.CONSUMER_GROUP, "verify-worker-1",
             "msg-1",
             {
                 b"idempotency_key": b"key-1",

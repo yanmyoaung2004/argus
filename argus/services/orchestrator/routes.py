@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 
@@ -16,6 +18,23 @@ _manager: ResearchManager | None = None
 def init_manager(manager: ResearchManager) -> None:
     global _manager
     _manager = manager
+
+
+@router.get("")
+async def list_research() -> list[dict[str, str | float | None]]:
+    if _manager is None:
+        raise HTTPException(status_code=503, detail="Research manager not initialized")
+    return _manager.list_tasks()
+
+
+@router.get("/{task_id}")
+async def get_research_status(task_id: str) -> dict[str, Any]:
+    if _manager is None:
+        raise HTTPException(status_code=503, detail="Research manager not initialized")
+    status = _manager.get_task_status(task_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return status
 
 
 @router.post("", response_model=ResearchResponse)

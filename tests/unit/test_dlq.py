@@ -81,7 +81,8 @@ class TestDLQConsumer:
             consumer.push_to_dlq({"task_id": f"test-{i}"}, f"Error {i}")
         assert fake_redis.xlen("dlq") == 5
 
-    def test_push_returns_none_without_redis(self) -> None:
+    def test_push_returns_none_without_redis(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("argus.shared.config.settings.redis_url", "redis://localhost:99999/0")
         c = DLQConsumer(redis_client=None)
         result = c.push_to_dlq({"task_id": "test"}, "No redis")
         assert result is None

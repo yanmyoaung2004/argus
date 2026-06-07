@@ -30,7 +30,10 @@ def agent() -> DeepDiveAgent:
 @pytest.mark.asyncio
 async def test_deep_dive_no_urls(agent: DeepDiveAgent) -> None:
     step = TaskStep(id=1, type=TaskType.EXTRACT, goal="Extract", agent=AgentType.DEEP_DIVE, task_id="test-no-urls", status=TaskStepStatus.RUNNING)
-    with patch.object(agent, "_get_source_urls_for_task", return_value=[]):
+    with (
+        patch.object(agent, "_get_source_urls_for_task", return_value=[]),
+        patch("time.sleep"),
+    ):
         facts = await agent.run(step)
     assert len(facts) == 0
 

@@ -55,6 +55,7 @@ class ResearchManager:
             self._timeouts[task_id_str] = IdleTimeoutMonitor(
                 task_id=task_id_str,
                 idle_timeout_minutes=settings.research_idle_timeout_minutes,
+                max_duration_minutes=task.max_duration_minutes,
             )
             logger.info(
                 "Research planned and queued",
@@ -131,6 +132,37 @@ class ResearchManager:
             if item is not None:
                 item.stop()
         self._timeouts.clear()
+
+    def list_tasks(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "task_id": str(t.task_id),
+                "query": t.query[:80],
+                "status": t.status.value,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                "total_cost": t.total_cost,
+                "error_message": t.error_message,
+            }
+            for t in self._tasks.values()
+        ]
+
+    def get_task_status(self, task_id: str) -> dict[str, Any] | None:
+        task = self._tasks.get(task_id)
+        if task is None:
+            return None
+        return {
+            "task_id": str(task.task_id),
+            "query": task.query,
+            "status": task.status.value,
+            "max_sources": task.max_sources,
+            "max_duration_minutes": task.max_duration_minutes,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "total_cost": task.total_cost,
+            "error_message": task.error_message,
+            "plan": task.plan.model_dump(mode="json") if task.plan else None,
+        }
 
     async def get_report(self, task_id: str) -> str | None:
         task = self._tasks.get(task_id)

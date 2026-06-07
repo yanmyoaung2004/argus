@@ -7,6 +7,7 @@ from typing import Any
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from argus.llm.provider_config import ProviderEntry
 from argus.shared.config import settings
 from argus.shared.models import LLMProviderType, LLMResponse, LLMUsage
 
@@ -14,8 +15,9 @@ from argus.shared.models import LLMProviderType, LLMResponse, LLMUsage
 class LLMProvider(ABC):
     """Abstract base for all LLM providers."""
 
-    def __init__(self, provider_type: LLMProviderType) -> None:
+    def __init__(self, provider_type: LLMProviderType, entry: ProviderEntry | None = None) -> None:
         self.provider_type = provider_type
+        self._entry = entry
         self._client: Any = None
 
     @abstractmethod
@@ -29,6 +31,22 @@ class LLMProvider(ABC):
     @abstractmethod
     def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         ...
+
+    # Maps ProviderEntry attribute names to settings suffix (after provider prefix)
+    _ATTR_TO_SETTINGS_SUFFIX: dict[str, str] = {
+        "api_key": "api_key",
+        "base_url": "base_url",
+        "selected_model": "model",
+    }
+
+    def _entry_or_settings(self, attr: str) -> str:
+        """Return entry value if set, otherwise fall back to settings."""
+        entry_val = getattr(self._entry, attr, "") if self._entry else ""
+        if entry_val:
+            return entry_val
+        settings_suffix = self._ATTR_TO_SETTINGS_SUFFIX.get(attr, attr)
+        settings_key = f"{self.provider_type.value}_{settings_suffix}"
+        return getattr(settings, settings_key, "")
 
     @retry(
         stop=stop_after_attempt(settings.llm_retry_max_attempts),
@@ -78,14 +96,33 @@ class LLMProvider(ABC):
 class OllamaProvider(LLMProvider):
     """Local Ollama — free, runs on own hardware."""
 
-    def __init__(self) -> None:
-        super().__init__(LLMProviderType.OLLAMA)
+    def __init__(self, entry: ProviderEntry | None = None) -> None:
+        super().__init__(LLMProviderType.OLLAMA, entry=entry)
+
+    def complete(self, prompt: str, system_prompt: str | None = None, **kwargs: Any) -> LLMResponse:
+        """Override: fast-fail if Ollama is not running, skip retry for connection errors."""
+        self._check_available()
+        return super().complete(prompt, system_prompt=system_prompt, **kwargs)
+
+    def _check_available(self) -> None:
+        """Lightweight check — raises immediately if Ollama is not reachable."""
+        import httpx
+        base_url = self._entry_or_settings("base_url") or settings.ollama_base_url
+        try:
+            resp = httpx.get(f"{base_url}/api/tags", timeout=2.0)
+            resp.raise_for_status()
+        except httpx.ConnectError as exc:
+            raise RuntimeError(
+                f"Ollama is not available at {base_url}. "
+                "Make sure Ollama is running or configure a different provider."
+            ) from exc
 
     def _create_client(self) -> OpenAI:
-        return OpenAI(base_url=settings.ollama_base_url + "/v1", api_key="ollama", max_retries=0)
+        base_url = self._entry_or_settings("base_url") or settings.ollama_base_url
+        return OpenAI(base_url=base_url.rstrip("/") + "/v1", api_key="ollama", max_retries=0)
 
     def _get_model_name(self) -> str:
-        return settings.ollama_model
+        return self._entry_or_settings("selected_model") or settings.ollama_model
 
     def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:  # noqa: ARG002
         return 0.0
@@ -94,14 +131,16 @@ class OllamaProvider(LLMProvider):
 class GroqProvider(LLMProvider):
     """Groq free tier — fast, rate-limited."""
 
-    def __init__(self) -> None:
-        super().__init__(LLMProviderType.GROQ)
+    def __init__(self, entry: ProviderEntry | None = None) -> None:
+        super().__init__(LLMProviderType.GROQ, entry=entry)
 
     def _create_client(self) -> OpenAI:
-        return OpenAI(base_url=settings.groq_base_url, api_key=settings.groq_api_key, max_retries=0)
+        api_key = self._entry_or_settings("api_key") or settings.groq_api_key
+        base_url = self._entry_or_settings("base_url") or settings.groq_base_url
+        return OpenAI(base_url=base_url, api_key=api_key, max_retries=0)
 
     def _get_model_name(self) -> str:
-        return settings.groq_model
+        return self._entry_or_settings("selected_model") or settings.groq_model
 
     def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:  # noqa: ARG002
         return 0.0
@@ -110,41 +149,43 @@ class GroqProvider(LLMProvider):
 class OpenRouterProvider(LLMProvider):
     """OpenRouter — cheap paid models as last fallback."""
 
-    def __init__(self) -> None:
-        super().__init__(LLMProviderType.OPENROUTER)
+    def __init__(self, entry: ProviderEntry | None = None) -> None:
+        super().__init__(LLMProviderType.OPENROUTER, entry=entry)
 
     def _create_client(self) -> OpenAI:
+        api_key = self._entry_or_settings("api_key") or settings.openrouter_api_key
+        base_url = self._entry_or_settings("base_url") or settings.openrouter_base_url
         return OpenAI(
-            base_url=settings.openrouter_base_url,
-            api_key=settings.openrouter_api_key,
+            base_url=base_url,
+            api_key=api_key,
             max_retries=0,
             default_headers={"HTTP-Referer": "https://argus.local"},
         )
 
     def _get_model_name(self) -> str:
-        return settings.openrouter_model
+        return self._entry_or_settings("selected_model") or settings.openrouter_model
 
     def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
-        # Mixtral 8x7B: ~$0.27/M input, ~$0.27/M output
         return (prompt_tokens * 0.27 + completion_tokens * 0.27) / 1_000_000
 
 
 class OpenAICompatibleProvider(LLMProvider):
     """Generic OpenAI-compatible endpoint."""
 
-    def __init__(self) -> None:
-        super().__init__(LLMProviderType.OPENAI_COMPATIBLE)
+    def __init__(self, entry: ProviderEntry | None = None) -> None:
+        super().__init__(LLMProviderType.OPENAI_COMPATIBLE, entry=entry)
 
     def _create_client(self) -> OpenAI:
+        api_key = self._entry_or_settings("api_key") or settings.openai_compatible_api_key
+        base_url = self._entry_or_settings("base_url") or settings.openai_compatible_base_url
         return OpenAI(
-            base_url=settings.openai_compatible_base_url,
-            api_key=settings.openai_compatible_api_key,
+            base_url=base_url,
+            api_key=api_key,
             max_retries=0,
         )
 
     def _get_model_name(self) -> str:
-        return settings.openai_compatible_model
+        return self._entry_or_settings("selected_model") or settings.openai_compatible_model
 
     def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
-        # GPT-4o-mini: ~$0.15/M input, ~$0.60/M output
         return (prompt_tokens * 0.15 + completion_tokens * 0.60) / 1_000_000

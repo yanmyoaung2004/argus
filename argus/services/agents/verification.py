@@ -31,17 +31,22 @@ class VerificationAgent(BaseAgent):
         claims = self._get_claims_for_task(step.task_id)
         if not claims:
             import time
-            for attempt in range(5):
+            delays = [5, 10, 20, 40, 60]
+            for attempt, delay in enumerate(delays, start=1):
                 logger.info(
                     "Waiting for claims to appear in KG",
-                    extra={"step_id": step.id, "attempt": attempt + 1},
+                    extra={"step_id": step.id, "attempt": attempt, "wait_seconds": delay},
                 )
-                time.sleep(2)
+                time.sleep(delay)
                 claims = self._get_claims_for_task(step.task_id)
                 if claims:
+                    logger.info(
+                        "Claims found after waiting",
+                        extra={"step_id": step.id, "attempt": attempt, "count": len(claims)},
+                    )
                     break
             if not claims:
-                logger.info("No claims to verify", extra={"step_id": step.id})
+                logger.info("No claims to verify after waiting", extra={"step_id": step.id})
                 return []
 
         grouped: dict[str, list[dict[str, Any]]] = {}

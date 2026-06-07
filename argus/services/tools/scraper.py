@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import time
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any
 
 import httpx
-from bs4 import BeautifulSoup
-from tenacity import retry, stop_after_attempt, wait_exponential
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
+
+def _is_retryable_scrape_error(exc: Exception) -> bool:
+    """Don't retry on 4xx client errors (won't change outcome)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return not (400 <= exc.response.status_code < 500)
+    return True
 
 from argus.shared.config import settings
 
@@ -106,6 +116,7 @@ class HttpxScraper(ScrapeProvider):
             multiplier=settings.llm_retry_min_wait_seconds,
             max=settings.llm_retry_max_wait_seconds,
         ),
+        retry=retry_if_exception(_is_retryable_scrape_error),
     )
     def scrape(self, url: str) -> ScrapeResponse:
         start = time.monotonic()
@@ -193,6 +204,7 @@ class FirecrawlScraper(ScrapeProvider):
             multiplier=settings.llm_retry_min_wait_seconds,
             max=settings.llm_retry_max_wait_seconds,
         ),
+        retry=retry_if_exception(_is_retryable_scrape_error),
     )
     def scrape(self, url: str) -> ScrapeResponse:
         start = time.monotonic()

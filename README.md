@@ -122,6 +122,16 @@ What happens:
 4. Saves to `report_{slug}_{task_id}.html`
 5. Opens the report in your browser
 
+### List tasks & check status
+
+```bash
+# List all research tasks
+python -m argus list
+
+# Show detailed status of a specific task
+python -m argus status <task_id>
+```
+
 ### Run a research query via API
 
 ```bash
@@ -198,10 +208,12 @@ Returns hit rate, total entries, kept entries, size, and expiry info.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/research` | Create a new research task. Body: `{"query": "...", "max_sources": 50, "max_duration_minutes": 30}` |
+| POST | `/research` | Create a new research task |
+| GET | `/research` | List all research tasks |
+| GET | `/research/{task_id}` | Get task status + step progress |
 | GET | `/research/{task_id}/status` | SSE stream of research progress |
 | GET | `/research/{task_id}/report` | Markdown report |
-| GET | `/research/{task_id}/html` | Interactive HTML report |
+| GET | `/research/{task_id}/html` | Interactive HTML report with D3.js graph |
 | POST | `/research/feedback/{source_id}` | Submit source credibility feedback |
 | GET | `/health` | System health + agent heartbeats |
 | GET | `/cache/stats` | Source cache statistics |
@@ -250,7 +262,9 @@ argus/
 ├── app.py                         # FastAPI app, health, cache stats endpoints
 ├── cli/
 │   ├── __init__.py                # CLI entry point
-│   └── onboard.py                 # Interactive provider setup wizard
+│   ├── onboard.py                 # Interactive provider setup wizard
+│   ├── research.py                # Submit research + watch SSE progress
+│   └── status.py                  # List tasks + show task status
 ├── llm/
 │   ├── provider_config.py         # Provider settings model + JSON persistence
 │   ├── providers.py               # Ollama, Groq, OpenRouter, OpenAI-compatible
@@ -267,7 +281,7 @@ argus/
 │   │   ├── verification.py        # Conflict detection
 │   │   └── synthesis.py           # Entity resolution + edge creation
 │   ├── tools/
-│   │   ├── search.py              # DuckDuckGo → SerpAPI
+│   │   ├── search.py              # DuckDuckGo → SerpAPI → Firecrawl
 │   │   ├── scraper.py             # httpx → Playwright → Firecrawl
 │   │   ├── parser.py              # Document parser (HTML, PDF, text)
 │   │   ├── cost_tracker.py        # Budget enforcement via Redis
@@ -331,7 +345,7 @@ pytest tests/unit/test_compressor.py -v
 pytest tests/integration/ -v
 ```
 
-Current test count: **207 tests** (4 known pre-existing failures deselected)
+Current test count: **211 tests** — all passing
 
 ### Lint & type check
 

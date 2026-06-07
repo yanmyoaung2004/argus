@@ -165,6 +165,45 @@ The HTML report features:
 - Source credibility breakdown
 - Cost report
 
+### Track tasks & status
+
+List all research tasks with their current status, query, and cost:
+
+```bash
+python -m argus list
+```
+
+Example output:
+```
+  Task ID                                  Status               Query                                               Cost
+  ──────────────────────────────────────── ──────────────────── ────────────────────────────────────────────────── ──────────
+  0192a1b0-1234-5678-9abc-def012345678     done                 What are the latest advances in LLM agents?       $0.0023
+  0192a1b0-8765-4321-0fed-cba987654321     running              AI coding tools comparison 2026                    $0.0011
+```
+
+Check detailed status of a specific task, including step progress:
+
+```bash
+python -m argus status <task_id>
+```
+
+Example output:
+```
+  Task ID:     0192a1b0-1234-5678-9abc-def012345678
+  Query:       What are the latest advances in LLM agents?
+  Status:      done
+  Max sources: 50
+  Max time:    30 min
+  Created:     2026-06-07T12:00:00
+  Completed:   2026-06-07T12:03:45
+  Cost:        $0.0023
+
+  Steps (3):
+    ✅ [scout] Search for recent LLM agent papers
+    ✅ [deep_dive] Extract claims from top sources
+    ✅ [verification] Cross-check conflicting claims
+```
+
 ### Provide feedback
 
 ```bash
@@ -182,6 +221,8 @@ Increases/decreases source credibility scores for future research.
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/research` | Create research task. Body: `{"query": "...", "max_sources": 50, "max_duration_minutes": 30}` |
+| GET | `/research` | List all research tasks with status summary |
+| GET | `/research/{task_id}` | Get task status details + step progress |
 | GET | `/research/{task_id}/status` | SSE progress stream |
 | GET | `/research/{task_id}/report` | Markdown report |
 | GET | `/research/{task_id}/html` | Interactive HTML report |
@@ -292,8 +333,10 @@ Options:
 ### Available CLI commands
 
 ```bash
-python -m argus onboard      # Provider setup wizard
-python -m argus research ...  # Submit research query
+python -m argus onboard          # Provider setup wizard
+python -m argus research ...     # Submit research query
+python -m argus list             # List all research tasks
+python -m argus status <task>    # Show task status + steps
 ```
 
 ### Ctrl+C during wizard

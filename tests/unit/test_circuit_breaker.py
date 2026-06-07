@@ -97,7 +97,8 @@ class TestCircuitBreaker:
 
 
 class TestCircuitBreakerNoRedis:
-    def test_without_redis_falls_back_to_closed(self) -> None:
+    def test_without_redis_falls_back_to_closed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("argus.shared.config.settings.redis_url", "redis://localhost:99999/0")
         cb = ProviderCircuitBreaker(LLMProviderType.OLLAMA, redis_client=None)
         assert cb.state == CircuitState.CLOSED
         assert cb.allow_request is True
