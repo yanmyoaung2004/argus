@@ -13,6 +13,9 @@ def run_list(args: argparse.Namespace) -> None:  # noqa: ARG001
     try:
         resp = httpx.get(f"{API_BASE}/research", timeout=15)
         resp.raise_for_status()
+    except KeyboardInterrupt:
+        print("\n  Cancelled.")
+        return
     except httpx.RequestError as exc:
         print(f"  ❌ Cannot reach Argus server at {API_BASE}")
         print("     Make sure `python -m argus` is running.")
@@ -44,6 +47,9 @@ def run_status(args: argparse.Namespace) -> None:
             print(f"  ❌ Task '{task_id}' not found.")
             sys.exit(1)
         resp.raise_for_status()
+    except KeyboardInterrupt:
+        print("\n  Cancelled.")
+        return
     except httpx.RequestError as exc:
         print(f"  ❌ Cannot reach Argus server at {API_BASE}")
         print("     Make sure `python -m argus` is running.")

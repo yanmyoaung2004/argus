@@ -1,5 +1,9 @@
 # Argus — Autonomous Research Agent
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
+
 **Thinks in graphs, cites everything, shows its work.**
 
 Argus is an event-driven, multi-agent research system. Submit a question; it plans a strategy, dispatches specialized agents via Redis Streams, builds a knowledge graph in SQLite, and produces an interactive HTML report with provenance — all for under $0.50 per query.

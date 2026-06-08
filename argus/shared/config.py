@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_timeout_seconds: int = 60
 
+    # Custom OpenAI-compatible endpoint
+    custom_openai_api_key: str = ""
+    custom_openai_model: str = ""
+    custom_openai_base_url: str = ""
+    custom_openai_timeout_seconds: int = 60
+
     # OpenAI-compatible endpoint
     openai_compatible_api_key: str = ""
     openai_compatible_model: str = "gpt-4o-mini"

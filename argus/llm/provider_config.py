@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -49,10 +50,18 @@ class ProviderSettings(BaseModel):
 CONFIG_PATH = Path.home() / ".argus" / "providers.json"
 
 
+_TAG_PATTERN = re.compile(r"\s*\((Free|Paid|Paid Fallback|Custom|Local|Web|AI Search)\)\s*")
+
+def _strip_tags(name: str) -> str:
+    return _TAG_PATTERN.sub("", name).strip()
+
 def load_settings() -> ProviderSettings:
     if CONFIG_PATH.exists():
         raw = json.loads(CONFIG_PATH.read_text("utf-8"))
-        return ProviderSettings(**raw)
+        settings = ProviderSettings(**raw)
+        for p in settings.providers:
+            p.display_name = _strip_tags(p.display_name)
+        return settings
     return ProviderSettings()
 
 

@@ -90,7 +90,8 @@ def _run_interactive_impl() -> None:
     profile = load_profile()
     changed = False
 
-    provider_types = [p.provider_type for p in enabled_llms]
+    provider_choices = [(p.display_name, p.provider_type) for p in enabled_llms]
+    provider_labels = [name for name, _ptype in provider_choices]
 
     print(f"  {c(C.CYAN + C.BOLD, 'Available providers:')}")
     for p in enabled_llms:
@@ -105,7 +106,10 @@ def _run_interactive_impl() -> None:
         label = STAGE_LABELS[stage]
         if existing:
             pv, md = existing.provider_type, existing.model or "default"
-            status = c(C.GREEN, f"{pv}/{md}")
+            display_name = next(
+                (n for n, t in provider_choices if t == pv), pv
+            )
+            status = c(C.GREEN, f"{display_name}/{md}")
         else:
             status = c(C.DIM, "(default)")
         print(f"  {c(C.CYAN + C.BOLD, '─── ' + label + ' ───')}  {status}")
@@ -119,12 +123,17 @@ def _run_interactive_impl() -> None:
                     changed = True
                     continue
                 p_default = existing.provider_type
+                default_label = next(
+                    (n for n, t in provider_choices if t == p_default), p_default
+                )
             else:
                 p_default = ""
+                default_label = ""
 
-            ptype = _pick("Provider:", provider_types, default=p_default)
-            if not ptype:
+            picked_label = _pick("Provider:", provider_labels, default=default_label)
+            if not picked_label:
                 continue
+            ptype = next(t for n, t in provider_choices if n == picked_label)
 
             selected_entry = next((p for p in enabled_llms if p.provider_type == ptype), None)
             known_models = selected_entry.selected_model or ""
@@ -169,10 +178,13 @@ def run_show(_args: argparse.Namespace | None = None) -> None:
         print(f"  Run {c(C.CYAN, 'python -m argus profile')} to set them up.\n")
         return
 
+    provider_settings = load_settings()
     print(f"\n  {c(C.CYAN + C.BOLD, 'Stage Profile')}")
     for a in profile.assignments:
+        entry = provider_settings.by_type(a.provider_type)
+        display_name = entry.display_name if entry else a.provider_type
         model_tag = c(C.DIM, f" [{a.model}]") if a.model else ""
-        print(f"    {a.task_type:<20} → {c(C.GREEN, a.provider_type)}{model_tag}")
+        print(f"    {a.task_type:<20} → {c(C.GREEN, display_name)}{model_tag}")
     print()
 
 

@@ -41,6 +41,9 @@ def run_research(args: argparse.Namespace) -> None:
             timeout=15,
         )
         resp.raise_for_status()
+    except KeyboardInterrupt:
+        print("\n  Cancelled.")
+        return
     except httpx.RequestError as exc:
         print(f"  ❌ Cannot reach Argus server at {API_BASE}")
         print("     Make sure `python -m argus` is running.")
