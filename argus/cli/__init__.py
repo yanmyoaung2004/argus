@@ -31,6 +31,10 @@ def main() -> None:
     from argus.cli.search import add_subparser as add_search_subparser
     add_search_subparser(subparsers)
 
+    # models
+    from argus.cli.models import add_subparser as add_models_subparser
+    add_models_subparser(subparsers)
+
     args = parser.parse_args()
 
     if args.command is None:

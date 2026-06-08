@@ -56,6 +56,8 @@ class LLMProviderType(StrEnum):
     LITELLM = "litellm"
     TOGETHER_AI = "together_ai"
     DEEPSEEK = "deepseek"
+    NVIDIA = "nvidia"
+    CUSTOM_OPENAI = "custom_openai"
     OPENAI_COMPATIBLE = "openai_compatible"
 
 

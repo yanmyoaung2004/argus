@@ -111,18 +111,16 @@ class TestRouter:
         def failing_complete(_self: object, *_args: object, **_kwargs: object) -> None:
             raise RuntimeError("Provider down")
 
-        monkeypatch.setattr(
-            "argus.llm.providers.OllamaProvider.complete",
-            failing_complete,
-        )
-        monkeypatch.setattr(
-            "argus.llm.providers.GroqProvider.complete",
-            failing_complete,
-        )
-        monkeypatch.setattr(
-            "argus.llm.providers.OpenRouterProvider.complete",
-            failing_complete,
-        )
+        for provider in (
+            "OllamaProvider", "GroqProvider", "OpenRouterProvider",
+            "OpenAIProvider", "AnthropicProvider", "GoogleAIStudioProvider",
+            "DeepSeekProvider", "TogetherAIProvider", "LiteLLMProvider",
+            "OpenAICompatibleProvider",
+        ):
+            monkeypatch.setattr(
+                f"argus.llm.providers.{provider}.complete",
+                failing_complete,
+            )
 
         with pytest.raises(RuntimeError, match="All LLM providers failed"):
             CostAwareRouter().complete(task_type="planning", prompt="test")
@@ -136,7 +134,7 @@ class TestRouter:
     def test_scout_routing_preferences(self) -> None:
         table = CostAwareRouter.ROUTING_TABLE["scout"]
         assert table[0] == LLMProviderType.GROQ
-        assert len(table) == 3
+        assert len(table) == 8
 
     def test_conflict_resolution_routing(self) -> None:
         table = CostAwareRouter.ROUTING_TABLE["conflict_resolution"]

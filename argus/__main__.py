@@ -46,6 +46,7 @@ def main() -> None:
         "onboard", "research", "list", "status",
         "profile", "profile-list", "profile-clear",
         "search", "search-list",
+        "models", "models-list",
         "--help", "-h",
     }
     if len(sys.argv) > 1 and sys.argv[1] in cli_commands:

@@ -104,6 +104,16 @@ KNOWN_MODELS: dict[str, list[str]] = {
         "deepseek-chat",
         "deepseek-coder",
     ],
+    "nvidia": [
+        "meta/llama-3.1-8b-instruct",
+        "meta/llama-3.1-70b-instruct",
+        "meta/llama-3.1-405b-instruct",
+        "mistralai/mistral-7b-instruct-v0.3",
+        "mistralai/mixtral-8x22b-instruct-v0.1",
+        "google/gemma-2-27b-it",
+        "nvidia/nemotron-4-340b-instruct",
+    ],
+    "custom_openai": [],
     "openai_compatible": [],
 }
 
@@ -179,6 +189,22 @@ DEFAULT_LLM_DEFS: list[dict[str, Any]] = [
         "default_model": "deepseek-chat",
         "cost_input": 0.27,
         "cost_output": 1.10,
+    },
+    {
+        "provider_type": "nvidia",
+        "display_name": "NVIDIA",
+        "default_base_url": "https://integrate.api.nvidia.com/v1",
+        "default_model": "meta/llama-3.1-8b-instruct",
+        "cost_input": 0.0,
+        "cost_output": 0.0,
+    },
+    {
+        "provider_type": "custom_openai",
+        "display_name": "Custom (OpenAI-compatible)",
+        "default_base_url": "",
+        "default_model": "",
+        "cost_input": 0.0,
+        "cost_output": 0.0,
     },
     {
         "provider_type": "openai_compatible",

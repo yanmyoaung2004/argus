@@ -50,6 +50,7 @@ class CostAwareRouter:
             LLMProviderType.ANTHROPIC,
             LLMProviderType.GOOGLE_AI_STUDIO,
             LLMProviderType.DEEPSEEK,
+            LLMProviderType.NVIDIA,
             LLMProviderType.TOGETHER_AI,
             LLMProviderType.LITELLM,
         ],
@@ -60,6 +61,7 @@ class CostAwareRouter:
             LLMProviderType.OPENAI,
             LLMProviderType.GOOGLE_AI_STUDIO,
             LLMProviderType.DEEPSEEK,
+            LLMProviderType.NVIDIA,
             LLMProviderType.TOGETHER_AI,
         ],
         "deep_dive": [
@@ -70,6 +72,7 @@ class CostAwareRouter:
             LLMProviderType.ANTHROPIC,
             LLMProviderType.GOOGLE_AI_STUDIO,
             LLMProviderType.DEEPSEEK,
+            LLMProviderType.NVIDIA,
             LLMProviderType.TOGETHER_AI,
             LLMProviderType.LITELLM,
         ],
@@ -80,6 +83,7 @@ class CostAwareRouter:
             LLMProviderType.OPENAI,
             LLMProviderType.ANTHROPIC,
             LLMProviderType.GOOGLE_AI_STUDIO,
+            LLMProviderType.NVIDIA,
             LLMProviderType.DEEPSEEK,
         ],
         "synthesis": [
@@ -89,6 +93,7 @@ class CostAwareRouter:
             LLMProviderType.OPENAI,
             LLMProviderType.GOOGLE_AI_STUDIO,
             LLMProviderType.DEEPSEEK,
+            LLMProviderType.NVIDIA,
             LLMProviderType.TOGETHER_AI,
             LLMProviderType.LITELLM,
         ],
@@ -99,6 +104,8 @@ class CostAwareRouter:
             LLMProviderType.ANTHROPIC,
             LLMProviderType.GOOGLE_AI_STUDIO,
             LLMProviderType.DEEPSEEK,
+            LLMProviderType.NVIDIA,
+            LLMProviderType.CUSTOM_OPENAI,
             LLMProviderType.OPENAI_COMPATIBLE,
         ],
     }
@@ -117,6 +124,8 @@ class CostAwareRouter:
         LLMProviderType.LITELLM,
         LLMProviderType.TOGETHER_AI,
         LLMProviderType.DEEPSEEK,
+        LLMProviderType.NVIDIA,
+        LLMProviderType.CUSTOM_OPENAI,
         LLMProviderType.OPENAI_COMPATIBLE,
     }
 
@@ -157,6 +166,10 @@ class CostAwareRouter:
                     self._providers[provider_type] = TogetherAIProvider(entry=entry)
                 case LLMProviderType.DEEPSEEK:
                     self._providers[provider_type] = DeepSeekProvider(entry=entry)
+                case LLMProviderType.NVIDIA:
+                    self._providers[provider_type] = OpenAICompatibleProvider(entry=entry)
+                case LLMProviderType.CUSTOM_OPENAI:
+                    self._providers[provider_type] = OpenAICompatibleProvider(entry=entry)
                 case LLMProviderType.OPENAI_COMPATIBLE:
                     self._providers[provider_type] = OpenAICompatibleProvider(entry=entry)
         return self._providers[provider_type]

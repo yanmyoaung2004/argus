@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_timeout_seconds: int = 60
 
+    # NVIDIA (OpenAI-compatible)
+    nvidia_api_key: str = ""
+    nvidia_model: str = "meta/llama-3.1-8b-instruct"
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_timeout_seconds: int = 60
+
     # OpenAI-compatible endpoint
     openai_compatible_api_key: str = ""
     openai_compatible_model: str = "gpt-4o-mini"

@@ -138,6 +138,15 @@ def _test(url: str, key: str, tester: Any) -> bool:
 
 
 def run_interactive(_args: argparse.Namespace | None = None) -> None:
+    try:
+        _run_interactive_impl()
+    except KeyboardInterrupt:
+        print(f"\n\n  {_c(C.YELLOW, 'Cancelled.')}\n")
+        import sys
+        sys.exit(0)
+
+
+def _run_interactive_impl() -> None:
     print(BANNER)
 
     provider_settings = load_settings()

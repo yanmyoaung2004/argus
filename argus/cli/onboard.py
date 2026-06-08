@@ -41,13 +41,20 @@ _N = lambda s: c(C.CYAN, s)  # noqa: E731
 _B = lambda s: c(C.BOLD + C.CYAN, s)  # noqa: E731
 _Y = lambda s: c(C.YELLOW, s)  # noqa: E731
 _L = _N("\u2551")
-_BX_TOP = _N("\u2554\u2550" * 27 + "\u2557")
-_BX_BOT = _N("\u255a\u2550" * 27 + "\u255d")
+_BX_TOP = _N("\u2554\u2550" * 28 + "\u2557")
+_BX_BOT = _N("\u255a\u2550" * 28 + "\u255d")
 _BX_SP = _L + " " * 55 + _L
-_BX_L1 = _L + "   " + _B("ARGUS \u2014 Provider Setup Wizard") + " " * 6 + _L
-_BX_L2 = _L + "   Configure LLM + search providers. API keys " + " " * 2 + _L
-_BX_L3 = _L + "   are tested instantly \u2014 no guessing.    " + " " * 4 + _L
-_BX_L4 = _L + "   Press " + _Y("Esc/Ctrl+C") + " to exit \u00b7 saved to providers.json" + _L
+_BX_L1 = _L + "   " + _B("ARGUS \u2014 Provider Setup Wizard") + " " * 23 + _L
+_BX_L2 = _L + "   Configure LLM + search providers. API keys " + " " * 9 + _L
+_BX_L3 = _L + "   are tested instantly \u2014 no guessing.    " + " " * 13 + _L
+_BX_L4 = (
+    _L
+    + "   Press "
+    + _Y("Esc/Ctrl+C")
+    + " to exit \u00b7 saved to providers.json"
+    + " " * 2
+    + _L
+)
 
 BANNER = (
     _N("    ") + _BX_TOP + "\n"
@@ -316,6 +323,8 @@ LLM_TESTERS: dict[str, Any] = {
     "litellm": _test_openai_compatible,
     "together_ai": _test_openai_compatible,
     "deepseek": _test_openai_compatible,
+    "nvidia": _test_openai_compatible,
+    "custom_openai": _test_openai_compatible,
     "openai_compatible": _test_openai_compatible,
 }
 
@@ -390,6 +399,16 @@ def _configure_llm(
     ptype = defn["provider_type"]
     label = defn["display_name"]
 
+    if ptype == "custom_openai":
+        fallback = existing.display_name if existing else ""
+        is_placeholder = fallback in ("", "Custom (OpenAI-compatible)")
+        custom_name = _text(
+            "Provider name",
+            default="" if is_placeholder else fallback,
+        )
+        if custom_name:
+            label = custom_name
+
     already = existing is not None and existing.enabled and existing.api_key
     status = c(C.GREEN, "✓ enabled") if already else c(C.DIM, "not configured")
     print(f"\n  {c(C.CYAN + C.BOLD, f'[{index}/{total}]')}  {c(C.BOLD, label)}  {status}")
@@ -439,6 +458,7 @@ def _configure_llm(
     tester = LLM_TESTERS[ptype]
     spinner = Spinner("Testing connection…")
     models: list[str] = []
+    connected = False
     for attempt in range(3):
         spinner.tick()
         try:
@@ -450,6 +470,7 @@ def _configure_llm(
 
         if ok:
             spinner.done(True, msg)
+            connected = True
             break
         spinner.done(False, msg)
         if attempt < 2:
@@ -458,9 +479,25 @@ def _configure_llm(
             if ptype != "ollama":
                 api_key = _secret_input("API Key")
             base_url = _text("Base URL", default=base_url)
-        else:
-            print(f"  {c(C.YELLOW, '⚠')} Skipping after 3 failed attempts.")
-            return None
+
+    if not connected:
+        if ptype == "custom_openai":
+            print(f"  {c(C.YELLOW, '⚠')} Connection failed — enter model ID manually.")
+            selected = _text("Model name")
+            return ProviderEntry(
+                provider_type=ptype,
+                display_name=label,
+                category="llm",
+                enabled=True,
+                base_url=base_url,
+                api_key=api_key,
+                selected_model=selected,
+                priority=99,
+                cost_per_million_input=defn["cost_input"],
+                cost_per_million_output=defn["cost_output"],
+            )
+        print(f"  {c(C.YELLOW, '⚠')} Skipping after 3 failed attempts.")
+        return None
 
     # Model selection
     known = KNOWN_MODELS.get(ptype, [])
@@ -631,6 +668,16 @@ ENV_MAP: dict[str, dict[str, str]] = {
         "api_key": "ARGUS_DEEPSEEK_API_KEY",
         "base_url": "ARGUS_DEEPSEEK_BASE_URL",
         "selected_model": "ARGUS_DEEPSEEK_MODEL",
+    },
+    "nvidia": {
+        "api_key": "ARGUS_NVIDIA_API_KEY",
+        "base_url": "ARGUS_NVIDIA_BASE_URL",
+        "selected_model": "ARGUS_NVIDIA_MODEL",
+    },
+    "custom_openai": {
+        "api_key": "ARGUS_CUSTOM_OPENAI_API_KEY",
+        "base_url": "ARGUS_CUSTOM_OPENAI_BASE_URL",
+        "selected_model": "ARGUS_CUSTOM_OPENAI_MODEL",
     },
     "openai_compatible": {
         "api_key": "ARGUS_OPENAI_COMPATIBLE_API_KEY",
