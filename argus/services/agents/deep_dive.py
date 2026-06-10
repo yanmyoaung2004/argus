@@ -14,9 +14,10 @@ from argus.shared.models import AgentType, Claim, Fact, Source, TaskStep
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 5
+MAX_CONTENT_CHARS = 8000
 
 
-def _build_extraction_prompt(sources: list[dict[str, str]]) -> str:
+def _build_extraction_prompt(sources: list[dict[str, str]], query: str = "") -> str:
     lines: list[str] = [
         "Extract factual claims from the following sources. "
         "For each claim, identify: the statement, the entity it refers to, "
@@ -25,11 +26,14 @@ def _build_extraction_prompt(sources: list[dict[str, str]]) -> str:
         "statement, entity_name, attribute, confidence.",
         "",
     ]
+    if query:
+        lines.insert(2, f"Research context: {query}")
+        lines.insert(3, "")
     for i, src in enumerate(sources, start=1):
         lines.append(f"--- Source {i} ---")
         lines.append(f"URL: {src.get('url', 'unknown')}")
         lines.append(f"Title: {src.get('title', '')}")
-        lines.append(f"Content:\n{src.get('content', '')[:2000]}")
+        lines.append(f"Content:\n{src.get('content', '')[:MAX_CONTENT_CHARS]}")
         lines.append("")
     return "\n".join(lines)
 
@@ -116,9 +120,10 @@ class DeepDiveAgent(BaseAgent):
         all_claims: list[Claim] = []
         all_sources: list[Source] = []
 
+        query = getattr(step, "query", "")
         for i in range(0, len(sources_data), BATCH_SIZE):
             batch = sources_data[i:i + BATCH_SIZE]
-            claims, sources = self._extract_batch(batch, str(step.id))
+            claims, sources = self._extract_batch(batch, str(step.id), query=query)
             all_claims.extend(claims)
             all_sources.extend(sources)
 
@@ -148,8 +153,9 @@ class DeepDiveAgent(BaseAgent):
         self,
         batch: list[dict[str, str]],
         task_id: str,
+        query: str = "",
     ) -> tuple[list[Claim], list[Source]]:
-        prompt = _build_extraction_prompt(batch)
+        prompt = _build_extraction_prompt(batch, query=query)
         sources_list: list[Source] = []
 
         for src in batch:
@@ -168,7 +174,7 @@ class DeepDiveAgent(BaseAgent):
             self._record_cost(cost, category="llm")
         except RuntimeError:
             logger.warning("Batch extraction failed, falling back to single-source")
-            return self._extract_single(batch, task_id)
+            return self._extract_single(batch, task_id, query=query)
 
         from argus.services.agents._parse import extract_json_array
 
@@ -192,12 +198,13 @@ class DeepDiveAgent(BaseAgent):
             return claims, sources_list
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
             logger.warning("Failed to parse batch extraction", extra={"error": str(exc)})
-            return self._extract_single(batch, task_id)
+            return self._extract_single(batch, task_id, query=query)
 
     def _extract_single(
         self,
         batch: list[dict[str, str]],
         _task_id: str,
+        query: str = "",
     ) -> tuple[list[Claim], list[Source]]:
         all_claims: list[Claim] = []
         all_sources: list[Source] = []
@@ -209,10 +216,11 @@ class DeepDiveAgent(BaseAgent):
                 credibility_score=0.5,
             ))
 
+            ctx = f"Research context: {query}\n\n" if query else ""
             single_prompt = (
-                f"Extract factual claims from this source.\n"
+                f"{ctx}Extract factual claims from this source.\n"
                 f"URL: {src['url']}\n"
-                f"Content:\n{src['content'][:2000]}\n\n"
+                f"Content:\n{src['content'][:MAX_CONTENT_CHARS]}\n\n"
                 f"Return a JSON list of objects with keys: statement, entity_name, attribute."
             )
 

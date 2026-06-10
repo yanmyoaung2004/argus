@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -29,40 +30,114 @@ class ScoutAgent(BaseAgent):
         logger.info("ScoutAgent running", extra={"step_id": step.id, "goal": step.goal})
 
         search_query = step.goal.replace("Research ", "").strip()
+        query = getattr(step, "query", "") or search_query
         search_response = self._searcher.search(search_query, max_results=10)
+
+        if not search_response.results:
+            logger.info("No search results found", extra={"step_id": step.id})
+            return []
 
         entities: list[Entity] = []
         sources: list[Source] = []
 
-        for result in search_response.results:
-            source = Source(
-                url=result.url,
-                title=result.title,
-                credibility_score=0.5,
-            )
-            sources.append(source)
+        analyzed = self._analyze_results(search_response.results, query)
 
-            name = result.title
-            if " - " in name:
-                name = name.split(" - ")[0].strip()
-            entity_type = "organization" if any(
-                t in result.url for t in [".com", ".org", ".io"]
-            ) else "unknown"
-            entity = Entity(
-                name=name[:80],
-                type=entity_type,
-                description=result.snippet[:200],
-                attributes={"url": result.url, "snippet": result.snippet},
-            )
+        if analyzed:
+            for item in analyzed:
+                source = Source(
+                    url=item.get("url", ""),
+                    title=item.get("title", ""),
+                    credibility_score=0.5,
+                )
+                sources.append(source)
 
-            url_lower = result.url.lower()
-            if any(domain in url_lower for domain in ["wikipedia.org", "britannica.com"]):
-                entity.attributes["authoritative"] = True
+                for ent in item.get("extracted_entities", []):
+                    entity = Entity(
+                        name=ent.get("name", item.get("title", "unknown"))[:80],
+                        type=ent.get("type", "unknown"),
+                        description=ent.get("description", "")[:200],
+                        attributes={
+                            "url": item.get("url", ""),
+                            "relevance": item.get("relevance", "medium"),
+                        },
+                    )
+                    url_lower = item.get("url", "").lower()
+                    if any(d in url_lower for d in ["wikipedia.org", "britannica.com"]):
+                        entity.attributes["authoritative"] = True
+                    entities.append(entity)
+        else:
+            for result in search_response.results:
+                source = Source(
+                    url=result.url,
+                    title=result.title,
+                    credibility_score=0.5,
+                )
+                sources.append(source)
 
-            entities.append(entity)
+                name = result.title
+                if " - " in name:
+                    name = name.split(" - ")[0].strip()
+                entity_type = "organization" if any(
+                    t in result.url for t in [".com", ".org", ".io"]
+                ) else "unknown"
+                entity = Entity(
+                    name=name[:80],
+                    type=entity_type,
+                    description=result.snippet[:200],
+                    attributes={"url": result.url, "snippet": result.snippet},
+                )
+                url_lower = result.url.lower()
+                if any(domain in url_lower for domain in ["wikipedia.org", "britannica.com"]):
+                    entity.attributes["authoritative"] = True
+                entities.append(entity)
 
         logger.info("ScoutAgent complete", extra={
             "step_id": step.id, "sources": len(sources), "entities": len(entities),
+            "llm_analyzed": bool(analyzed),
         })
 
         return self._emit_facts(step, [*entities, *sources])
+
+    def _analyze_results(
+        self,
+        results: list[Any],
+        query: str,
+    ) -> list[dict[str, Any]]:
+        if not self._router:
+            return []
+
+        formatted = []
+        for i, r in enumerate(results, start=1):
+            formatted.append(f"{i}. URL: {r.url}\n   Title: {r.title}\n   Snippet: {r.snippet}")
+
+        prompt = (
+            f"You are a research scout analyzing search results for the query: \"{query}\"\n\n"
+            f"For each search result below, determine if it's relevant to the research query. "
+            f"Return a JSON array of objects with keys:\n"
+            f"- url: the URL\n"
+            f"- title: the title\n"
+            f"- relevance: \"high\" / \"medium\" / \"low\"\n"
+            f"- extracted_entities: array of objects with keys name, type, description\n\n"
+            f"Search results:\n" + "\n".join(formatted)
+        )
+
+        try:
+            self._check_budget(estimated_cost=0.01)
+            text, provider, cost = self._router.complete(
+                task_type="scout",
+                prompt=prompt,
+            )
+            self._record_cost(cost, category="llm")
+
+            from argus.services.agents._parse import extract_json_array
+            result: list[dict[str, Any]] = extract_json_array(text)
+            return [
+                item for item in result
+                if item.get("relevance", "low") in ("high", "medium")
+                and item.get("url")
+            ]
+        except (RuntimeError, json.JSONDecodeError, TypeError) as exc:
+            logger.warning(
+                "Scout LLM analysis failed, using raw results", extra={"error": str(exc)}
+            )
+            return []

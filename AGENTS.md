@@ -80,6 +80,27 @@ argus/ui/              ← report_generator, watcher, templates/, static/
 
 **Search priority** (`~/.argus/providers.json`) determines the fallback order for web searches. The `WebSearch` class reads enabled providers sorted by priority (lowest first) and tries each in sequence. Configure via `python -m argus search` or during `onboard`. Falls back to env-var-based config when no saved search providers exist.
 
+## Pipeline improvements (June 2026)
+
+### LLM planner (now default)
+`ResearchManager` uses `LLMPlanner` (`orchestrator/planner/llm_planner.py`) by default instead of `RuleBasedPlanner`. The LLM dynamically decomposes each query into steps (discover, extract, verify, synthesize). Falls back to `RuleBasedPlanner` on failure.
+
+### Synthesis step in every plan
+Both `LLMPlanner` and the fallback `RuleBasedPlanner` now include a `SYNTHESIZE` step as the final pipeline stage. `SynthesisAgent` (`services/agents/synthesis.py`) extends `BaseAgent` — its `run()` method queries the KG for entities/claims and generates a cohesive markdown synthesis via LLM. The agent also continues its existing role as a stream consumer for entity merging.
+
+### Query context flows to all agents
+The original research query is passed through the Redis message → `TaskStep.query` → every agent. Agent prompts now include the query context:
+- **Deep dive**: Prompt begins with `Research context: {query}` before sources
+- **Verification**: Research context added to conflict check prompt
+- **Scout**: LLM analyzes search results against the query, extracts entities with relevance filtering
+- **Synthesis**: Query used in the final summary prompt
+
+### Scout LLM-powered
+Scout (`services/agents/scout.py`) now calls the LLM after search to analyze results against the query. It classifies relevance (high/medium/low) and extracts entities with descriptions. Falls back to raw results if the LLM call fails.
+
+### Larger content window
+Deep dive content per source increased from 2000 to 8000 chars (`MAX_CONTENT_CHARS` in `deep_dive.py`).
+
 ## Tech stack
 
 | Layer | Choice |

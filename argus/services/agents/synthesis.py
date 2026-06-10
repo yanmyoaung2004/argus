@@ -9,30 +9,35 @@ from typing import Any
 
 import redis as redis_lib
 
-from argus.llm.router import CostAwareRouter
+from argus.services.agents.base import BaseAgent
 from argus.services.knowledge_graph.schema import init_db
-from argus.services.tools.cost_tracker import CostTracker
 from argus.shared.config import settings
-from argus.shared.models import Entity
+from argus.shared.models import AgentType, Entity, Fact, TaskStep
 
 logger = logging.getLogger(__name__)
 
 
-class SynthesisAgent:
+class SynthesisAgent(BaseAgent):
     SIMILARITY_THRESHOLD_MERGE = 0.85
     SIMILARITY_THRESHOLD_LLM = 0.70
     EDGE_COOCCUR_THRESHOLD = 2
 
     def __init__(
         self,
+        router: Any = None,
+        idempotency: Any = None,
+        cost_tracker: Any = None,
         db_path: str | None = None,
         redis_client: redis_lib.Redis | None = None,
-        router: CostAwareRouter | None = None,
-        cost_tracker: CostTracker | None = None,
     ) -> None:
+        super().__init__(
+            AgentType.SYNTHESIS,
+            router=router,
+            idempotency=idempotency,
+            cost_tracker=cost_tracker,
+        )
         self._db_path = db_path or settings.sqlite_path
         self._redis = redis_client
-        self._router = router or CostAwareRouter()
         self._cost_tracker = cost_tracker
         self._running = False
         self._edge_check_counter = 0
@@ -47,6 +52,84 @@ class SynthesisAgent:
 
     def _get_db(self) -> sqlite3.Connection:
         return init_db(self._db_path)
+
+    async def run(self, step: TaskStep) -> list[Fact]:
+        logger.info("SynthesisAgent running", extra={"step_id": step.id, "goal": step.goal})
+
+        task_id = step.task_id
+        query = getattr(step, "query", "")
+
+        conn = self._get_db()
+        try:
+            entities = conn.execute(
+                "SELECT name, type, description, confidence FROM entities WHERE task_id = ?",
+                (task_id,),
+            ).fetchall()
+
+            claim_rows = conn.execute(
+                "SELECT statement, confidence, entity_name, attribute "
+                "FROM claims WHERE task_id = ? ORDER BY confidence DESC",
+                (task_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        if not entities and not claim_rows:
+            logger.info("No data to synthesize", extra={"task_id": task_id})
+            return []
+
+        synthesis = self._generate_synthesis(query, entities, claim_rows)
+        if synthesis is None:
+            return []
+
+        fact_data = {
+            "type": "synthesis",
+            "task_id": task_id,
+            "content": synthesis,
+            "entity_count": len(entities),
+            "claim_count": len(claim_rows),
+        }
+
+        return self._emit_facts(step, [fact_data])
+
+    def _generate_synthesis(
+        self,
+        query: str,
+        entities: list[Any],
+        claims: list[Any],
+    ) -> str | None:
+        ctx = f" for the query: {query}" if query else ""
+        entity_block = "\n".join(
+            f"- {e[0]} ({e[1]}): {e[2] or 'no description'}" for e in entities[:20]
+        ) if entities else "None found"
+        claim_block = "\n".join(
+            f"- [{c[1]:.0%} confidence] {c[0]} (entity: {c[2]}, attribute: {c[3]})"
+            for c in claims[:30]
+        ) if claims else "None found"
+
+        prompt = (
+            f"Synthesize the research findings{ctx}.\n\n"
+            f"Entities found:\n{entity_block}\n\n"
+            f"Claims extracted:\n{claim_block}\n\n"
+            f"Provide a concise synthesis covering:\n"
+            f"1. Key entities and their roles\n"
+            f"2. Main findings and facts\n"
+            f"3. Any contradictions or uncertainties\n"
+            f"4. Overall conclusion\n\n"
+            f"Return your synthesis as plain text with markdown formatting."
+        )
+
+        try:
+            self._check_budget(estimated_cost=0.02)
+            text, provider, cost = self._router.complete(
+                task_type="synthesis",
+                prompt=prompt,
+            )
+            self._record_cost(cost, category="llm")
+            return text.strip()
+        except (RuntimeError, Exception) as exc:
+            logger.warning("Synthesis generation failed", extra={"error": str(exc)})
+            return None
 
     def start(self) -> None:
         self._running = True

@@ -70,6 +70,7 @@ class TaskStep(BaseModel):
     status: TaskStepStatus = TaskStepStatus.PENDING
     result: dict[str, Any] | None = None
     task_id: str = ""
+    query: str = ""
 
 
 class ResearchPlan(BaseModel):

@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import time
-from typing import Any
-
-import pytest
 
 from argus.services.heartbeat import HeartbeatWriter, get_alive_agents
 

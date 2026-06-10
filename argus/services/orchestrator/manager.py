@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import redis as redis_lib
 
-from argus.services.orchestrator.planner.rules import RuleBasedPlanner
+from argus.services.orchestrator.planner import LLMPlanner
 from argus.services.orchestrator.timeout import IdleTimeoutMonitor
 from argus.shared.config import settings
 from argus.shared.idempotency import generate_idempotency_key
@@ -20,9 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 class ResearchManager:
-    def __init__(self, redis_client: redis_lib.Redis | None = None) -> None:
+    def __init__(
+        self,
+        redis_client: redis_lib.Redis | None = None,
+        planner: Any = None,
+    ) -> None:
         self._redis = redis_client
-        self._planner = RuleBasedPlanner()
+        self._planner = planner or LLMPlanner()
         self._tasks: dict[str, ResearchTask] = {}
         self._timeouts: dict[str, IdleTimeoutMonitor] = {}
         self._completed_steps: dict[str, set[int]] = {}
@@ -81,6 +85,8 @@ class ResearchManager:
             logger.warning("No Redis available, skipping plan push", extra={"task_id": task_id})
             return
 
+        task = self._tasks.get(task_id)
+        query = task.query if task else ""
         for step in plan.steps:
             message = {
                 "idempotency_key": generate_idempotency_key(),
@@ -89,6 +95,7 @@ class ResearchManager:
                 "type": step.type.value,
                 "agent": step.agent.value,
                 "goal": step.goal,
+                "query": query,
                 "depends_on": json.dumps(step.depends_on),
             }
             stream = f"tasks:{step.agent.value}"

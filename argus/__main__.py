@@ -59,8 +59,6 @@ def main() -> None:
     threads: list[threading.Thread] = []
 
     for agent_type in AgentType:
-        if agent_type == AgentType.SYNTHESIS:
-            continue
         t = threading.Thread(target=_run_task_agent, args=(agent_type,), daemon=True)
         t.start()
         threads.append(t)

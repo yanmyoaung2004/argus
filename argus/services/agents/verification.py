@@ -30,6 +30,8 @@ class VerificationAgent(BaseAgent):
     async def run(self, step: TaskStep) -> list[Fact]:
         logger.info("VerificationAgent running", extra={"step_id": step.id, "goal": step.goal})
 
+        self._query = getattr(step, "query", "")
+
         claims = self._get_claims_for_task(step.task_id)
         if not claims:
             import time
@@ -129,10 +131,13 @@ class VerificationAgent(BaseAgent):
         claim_a: dict[str, Any],
         claim_b: dict[str, Any],
     ) -> dict[str, Any] | None:
+        query_hint = getattr(self, "_query", "")
+        query_context = f"\nResearch context: {query_hint}\n" if query_hint else ""
         prompt = (
             f"Determine if the following two claims are contradictory, "
             f"supportive, or unrelated. Return a JSON object with keys: "
-            f"relationship (contradictory/supportive/unrelated), reason.\n\n"
+            f"relationship (contradictory/supportive/unrelated), reason."
+            f"{query_context}"
             f"Claim A: {claim_a.get('statement', '')}\n"
             f"Source A: {claim_a.get('source_urls', [])}\n\n"
             f"Claim B: {claim_b.get('statement', '')}\n"

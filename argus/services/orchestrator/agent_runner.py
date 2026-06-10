@@ -142,6 +142,7 @@ class AgentRunner:
                 "step_id": int(msg_data.get(b"step_id", b"0").decode("utf-8")),
                 "type": msg_data.get(b"type", b"").decode("utf-8"),
                 "goal": msg_data.get(b"goal", b"").decode("utf-8"),
+                "query": msg_data.get(b"query", b"").decode("utf-8"),
                 "depends_on": json.loads(
                     msg_data.get(b"depends_on", b"[]").decode("utf-8")
                 ),
@@ -175,6 +176,7 @@ class AgentRunner:
             depends_on=parsed.get("depends_on", []),
             result={},
             task_id=parsed.get("task_id", ""),
+            query=parsed.get("query", ""),
         )
 
         try:

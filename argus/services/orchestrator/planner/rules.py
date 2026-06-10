@@ -59,6 +59,16 @@ class RuleBasedPlanner:
             depends_on=[step_id - 1],
         ))
 
+        step_id += 1
+        steps.append(TaskStep(
+            id=step_id,
+            type=TaskType.SYNTHESIZE,
+            goal=f"Synthesize findings for: {query_lower[:60]}",
+            agent=AgentType.SYNTHESIS,
+            status=TaskStepStatus.PENDING,
+            depends_on=[step_id - 1],
+        ))
+
         return ResearchPlan(
             steps=steps,
             estimated_sources=len(steps) * 10,
