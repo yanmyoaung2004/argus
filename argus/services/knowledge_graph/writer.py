@@ -59,7 +59,7 @@ class KGWriter:
         last_flush = time.monotonic()
         while self._running:
             try:
-                raw: list[Any] = list(r.xread({"facts": last_id}, count=10, block=2000))
+                raw = r.xread({"facts": last_id}, count=10, block=2000)
             except Exception:
                 time.sleep(1)
                 continue
@@ -86,6 +86,24 @@ class KGWriter:
         try:
             raw_data: Any = msg_data.get(b"data", b"{}")
             data = json.loads(raw_data) if isinstance(raw_data, (bytes, str)) else raw_data
+
+            ik: str = data.get("idempotency_key", "")
+            if ik:
+                conn = self._get_db()
+                try:
+                    existing = conn.execute(
+                        "SELECT 1 FROM processed_keys WHERE key_hash = ?",
+                        (ik,),
+                    ).fetchone()
+                    if existing is not None:
+                        return
+                    conn.execute(
+                        "INSERT OR IGNORE INTO processed_keys (key_hash, created_at) VALUES (?, ?)",
+                        (ik, time.time()),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
 
             task_id: str = data.get("task_id", "unknown")
             facts_list: list[dict[str, Any]] = (

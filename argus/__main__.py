@@ -32,6 +32,13 @@ def _run_synthesis_agent() -> None:
     agent.start()
 
 
+def _run_dlq_consumer() -> None:
+    from argus.services.dlq.consumer import DLQConsumer
+    consumer = DLQConsumer()
+    logger.info("Starting DLQ consumer")
+    consumer.start()
+
+
 def _run_kg_writer() -> None:
     writer = KGWriter()
     logger.info("Starting KG writer")
@@ -65,6 +72,10 @@ def main() -> None:
         time.sleep(0.1)
 
     t = threading.Thread(target=_run_synthesis_agent, daemon=True)
+    t.start()
+    threads.append(t)
+
+    t = threading.Thread(target=_run_dlq_consumer, daemon=True)
     t.start()
     threads.append(t)
 

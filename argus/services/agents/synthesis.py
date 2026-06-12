@@ -41,6 +41,8 @@ class SynthesisAgent(BaseAgent):
         self._cost_tracker = cost_tracker
         self._running = False
         self._edge_check_counter = 0
+        self._entity_buffer: list[tuple[Entity, str]] = []
+        self._batch_depth = 0
 
     def _get_redis(self) -> redis_lib.Redis | None:
         if self._redis is None:
@@ -147,22 +149,29 @@ class SynthesisAgent(BaseAgent):
         last_id = "0"
         while self._running:
             try:
-                raw: list[Any] = list(r.xread({"facts": last_id}, count=10, block=2000))
+                raw = r.xread({"facts": last_id}, count=10, block=2000)
             except Exception:
                 time.sleep(1)
                 continue
 
-            for entry in raw:
-                if not isinstance(entry, (list, tuple)) or len(entry) < 2:
-                    continue
-                messages = entry[1]
-                for msg_entry in messages:
-                    if not isinstance(msg_entry, (list, tuple)) or len(msg_entry) < 2:
-                        continue
-                    msg_id, msg_data = msg_entry
-                    last_id = msg_id
-                    if isinstance(msg_data, dict):
-                        self._process_fact(msg_data)
+            if raw:
+                self._batch_depth += 1
+                try:
+                    for entry in raw:
+                        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                            continue
+                        messages = entry[1]
+                        for msg_entry in messages:
+                            if not isinstance(msg_entry, (list, tuple)) or len(msg_entry) < 2:
+                                continue
+                            msg_id, msg_data = msg_entry
+                            last_id = msg_id
+                            if isinstance(msg_data, dict):
+                                self._process_fact(msg_data)
+                finally:
+                    self._batch_depth -= 1
+                    if self._entity_buffer:
+                        self._flush_entity_buffer()
 
             self._edge_check_counter += 1
             if self._edge_check_counter >= 50:
@@ -200,21 +209,42 @@ class SynthesisAgent(BaseAgent):
         )
         task_id = fact.get("task_id", "unknown")
 
-        conn = self._get_db()
-        try:
-            match = self._find_match(conn, entity)
-            if match is None:
-                self._insert_entity(conn, entity, task_id)
-            elif match["similarity"] >= self.SIMILARITY_THRESHOLD_MERGE:
+        if self._batch_depth > 0:
+            self._entity_buffer.append((entity, task_id))
+        else:
+            self._flush_single(entity, task_id)
+
+    def _process_entity(self, conn: sqlite3.Connection, entity: Entity, task_id: str) -> None:
+        match = self._find_match(conn, entity)
+        if match is None:
+            self._insert_entity(conn, entity, task_id)
+        elif match["similarity"] >= self.SIMILARITY_THRESHOLD_MERGE:
+            self._merge_entity(conn, match["id"], entity, task_id)
+        elif match["similarity"] >= self.SIMILARITY_THRESHOLD_LLM:
+            should_merge = self._ask_llm(entity.name, match["name"])
+            if should_merge:
                 self._merge_entity(conn, match["id"], entity, task_id)
-            elif match["similarity"] >= self.SIMILARITY_THRESHOLD_LLM:
-                should_merge = self._ask_llm(entity.name, match["name"])
-                if should_merge:
-                    self._merge_entity(conn, match["id"], entity, task_id)
-                else:
-                    self._insert_entity(conn, entity, task_id)
             else:
                 self._insert_entity(conn, entity, task_id)
+        else:
+            self._insert_entity(conn, entity, task_id)
+
+    def _flush_single(self, entity: Entity, task_id: str) -> None:
+        conn = self._get_db()
+        try:
+            self._process_entity(conn, entity, task_id)
+        finally:
+            conn.close()
+
+    def _flush_entity_buffer(self) -> None:
+        if not self._entity_buffer:
+            return
+        batch = self._entity_buffer[:]
+        self._entity_buffer = []
+        conn = self._get_db()
+        try:
+            for entity, task_id in batch:
+                self._process_entity(conn, entity, task_id)
         finally:
             conn.close()
 

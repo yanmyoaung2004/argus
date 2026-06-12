@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_debug: bool = False
     app_log_level: str = "info"
+    cors_origins: str = "*"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

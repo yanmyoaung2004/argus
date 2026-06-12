@@ -14,6 +14,8 @@ from argus.services.orchestrator.lifespan import lifespan
 from argus.services.orchestrator.routes import router as research_router
 from argus.shared.config import settings
 
+origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+
 logging.basicConfig(
     level=getattr(logging, settings.app_log_level.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -29,7 +31,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

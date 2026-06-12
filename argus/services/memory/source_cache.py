@@ -16,19 +16,22 @@ class SourceCache:
 
     def _get_db(self) -> Any:  # noqa: ANN401
         conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(self._db_path, check_same_thread=False)
-            conn.execute(
-                """CREATE TABLE IF NOT EXISTS source_cache (
-                    url_hash TEXT PRIMARY KEY,
-                    url TEXT NOT NULL,
-                    markdown TEXT NOT NULL,
-                    content_type TEXT DEFAULT '',
-                    fetched_at REAL NOT NULL,
-                    keep INTEGER NOT NULL DEFAULT 0
-                )"""
-            )
-            self._local.conn = conn
+        if conn is not None:
+            return conn
+        conn = sqlite3.connect(self._db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS source_cache (
+                url_hash TEXT PRIMARY KEY,
+                url TEXT NOT NULL,
+                markdown TEXT NOT NULL,
+                content_type TEXT DEFAULT '',
+                fetched_at REAL NOT NULL,
+                keep INTEGER NOT NULL DEFAULT 0
+            )"""
+        )
+        conn.commit()
+        self._local.conn = conn
         return conn
 
     def _hash_url(self, url: str) -> str:
@@ -43,7 +46,7 @@ class SourceCache:
         )
         row = cursor.fetchone()
         if row is None:
-            self.track_miss()
+            self._track_miss()
             return None
 
         markdown: Any = row[0]
@@ -52,10 +55,10 @@ class SourceCache:
         if not keep and time.time() - fetched_at > self._ttl:
             conn.execute("DELETE FROM source_cache WHERE url_hash = ?", (url_hash,))
             conn.commit()
-            self.track_miss()
+            self._track_miss()
             return None
 
-        self.track_hit()
+        self._track_hit()
         return str(markdown) if markdown is not None else None
 
     def set(self, url: str, markdown: str, content_type: str = "", keep: bool = False) -> None:
@@ -123,8 +126,8 @@ class SourceCache:
             "ttl_seconds": self._ttl,
         }
 
-    def track_hit(self) -> None:
+    def _track_hit(self) -> None:
         self._hits = getattr(self, "_hits", 0) + 1
 
-    def track_miss(self) -> None:
+    def _track_miss(self) -> None:
         self._misses = getattr(self, "_misses", 0) + 1

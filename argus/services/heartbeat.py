@@ -49,7 +49,7 @@ class HeartbeatWriter:
             if r is not None:
                 try:
                     key = f"{HEARTBEAT_PREFIX}:{self._agent_id}"
-                    r.setex(key, HEARTBEAT_TTL, str(time.time()))
+                    r.set(key, str(time.time()), ex=HEARTBEAT_TTL)
                 except Exception as exc:
                     logger.warning("Heartbeat write failed", extra={"agent_id": self._agent_id, "error": str(exc)})
             for _ in range(HEARTBEAT_INTERVAL):

@@ -5,23 +5,38 @@ import re
 from typing import Any
 
 
+def _strip_code_fences(text: str) -> str:
+    text = re.sub(r"(?s)^\s*```(?:json)?\s*\n?", "", text)
+    text = re.sub(r"(?s)\n?\s*```\s*$", "", text)
+    return text
+
+
+def _balanced_bracket_match(text: str, open_b: str, close_b: str) -> tuple[int, int] | None:
+    start = text.find(open_b)
+    if start == -1:
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == open_b:
+            depth += 1
+        elif text[i] == close_b:
+            depth -= 1
+            if depth == 0:
+                return start, i + 1
+    return None
+
+
 def extract_json_array(text: str) -> list[dict[str, Any]]:
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    arr_start = text.find("[")
-    arr_end = text.rfind("]")
-    if arr_start != -1 and arr_end > arr_start:
-        text = text[arr_start : arr_end + 1]
+    text = _strip_code_fences(text.strip())
+    span = _balanced_bracket_match(text, "[", "]")
+    if span:
+        text = text[span[0] : span[1]]
     return json.loads(text)
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    obj_start = text.find("{")
-    obj_end = text.rfind("}")
-    if obj_start != -1 and obj_end > obj_start:
-        text = text[obj_start : obj_end + 1]
+    text = _strip_code_fences(text.strip())
+    span = _balanced_bracket_match(text, "{", "}")
+    if span:
+        text = text[span[0] : span[1]]
     return json.loads(text)

@@ -9,11 +9,14 @@ from typing import Any
 
 import redis as redis_lib
 
+from argus.services.agents.base import BudgetError
 from argus.services.agents.deep_dive import DeepDiveAgent
 from argus.services.agents.scout import ScoutAgent
 from argus.services.agents.synthesis import SynthesisAgent
 from argus.services.agents.verification import VerificationAgent
 from argus.services.dlq.consumer import DLQConsumer
+from argus.services.heartbeat import HeartbeatWriter
+from argus.services.tools.cost_tracker import BudgetExceededError
 from argus.shared.config import settings
 from argus.shared.models import AgentType, TaskStep, TaskStepStatus
 
@@ -43,6 +46,8 @@ class AgentRunner:
         self._concurrency = concurrency
         self._running = False
         self._dlq = DLQConsumer(redis_client=redis_client)
+        self._heartbeat = HeartbeatWriter(agent_id=agent_type.value, redis_client=redis_client)
+        self._loop = asyncio.new_event_loop()
         agent_class = AGENT_MAP.get(agent_type)
         if agent_class is None:
             raise ValueError(f"Unknown agent type: {agent_type}")
@@ -69,6 +74,7 @@ class AgentRunner:
     def start(self) -> None:
         self._ensure_group()
         self._running = True
+        self._heartbeat.start()
         consumer_name = f"{self.agent_type.value}-worker-{int(time.time())}"
         logger.info(
             "Agent runner starting",
@@ -82,6 +88,8 @@ class AgentRunner:
 
     def stop(self) -> None:
         self._running = False
+        self._heartbeat.stop()
+        self._loop.close()
 
     def _consume_loop(self, consumer_name: str) -> None:
         r = self._get_redis()
@@ -101,15 +109,15 @@ class AgentRunner:
                 return False
 
         try:
-            raw: list[Any] = list(
-                r.xreadgroup(
-                    self.CONSUMER_GROUP,
-                    consumer_name,
-                    {self.STREAM: ">"},
-                    count=self._concurrency,
-                    block=2000,
-                )
+            raw = r.xreadgroup(
+                self.CONSUMER_GROUP,
+                consumer_name,
+                {self.STREAM: ">"},
+                count=self._concurrency,
+                block=2000,
             )
+            if raw is None:
+                return False
         except Exception:
             return False
 
@@ -180,10 +188,28 @@ class AgentRunner:
         )
 
         try:
-            facts = asyncio.run(self._agent.run(step))
+            facts = self._loop.run_until_complete(self._agent.run(step))
             self._publish_facts(facts)
             self._emit_progress(parsed["task_id"], step.id, "step_complete", {
                 "facts_count": len(facts),
+            })
+            self._ack_message(msg_id, consumer_name)
+        except BudgetError as exc:
+            logger.warning(
+                "Agent budget limit reached",
+                extra={"agent": self.agent_type.value, "step_id": step.id, "error": str(exc)},
+            )
+            self._emit_progress(parsed["task_id"], step.id, "budget_exceeded", {
+                "error": str(exc),
+            })
+            self._ack_message(msg_id, consumer_name)
+        except BudgetExceededError as exc:
+            logger.warning(
+                "Agent budget exceeded",
+                extra={"agent": self.agent_type.value, "step_id": step.id, "error": str(exc)},
+            )
+            self._emit_progress(parsed["task_id"], step.id, "budget_exceeded", {
+                "error": str(exc),
             })
             self._ack_message(msg_id, consumer_name)
         except Exception as exc:
@@ -230,8 +256,8 @@ class AgentRunner:
             if event_type == "step_complete":
                 with contextlib.suppress(Exception):
                     r.publish(f"task_events:{task_id}", json.dumps({"step_id": step_id}))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to emit progress", extra={"error": str(exc)})
 
     def _ack_message(self, msg_id: bytes, _consumer_name: str) -> None:
         r = self._get_redis()

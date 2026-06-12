@@ -6,9 +6,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from argus.services.orchestrator.manager import ResearchManager
-from argus.services.orchestrator.models import ResearchRequest, ResearchResponse
 from argus.services.orchestrator.sse import SSEStreamer
-from argus.shared.models import FeedbackRequest
+from argus.shared.models import FeedbackRequest, ResearchRequest, ResearchResponse
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -85,9 +84,9 @@ async def get_html_report(task_id: str) -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
-@router.post("/feedback/{source_id}")
-async def submit_feedback(source_id: int, req: FeedbackRequest) -> dict[str, str | float]:
+@router.post("/feedback")
+async def submit_feedback(req: FeedbackRequest) -> dict[str, str | float]:
     if _manager is None:
         raise HTTPException(status_code=503, detail="Research manager not initialized")
-    new_score = await _manager.apply_feedback(source_id, req.is_correct)
-    return {"source_id": source_id, "new_credibility_score": new_score}
+    new_score = await _manager.apply_feedback(req.source_id, req.is_correct)
+    return {"source_id": req.source_id, "new_credibility_score": new_score}

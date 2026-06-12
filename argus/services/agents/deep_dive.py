@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from argus.llm.router import CostAwareRouter
+from argus.services.agents._parse import extract_json_array
 from argus.services.agents.base import BaseAgent
 from argus.services.memory.source_cache import SourceCache
 from argus.services.tools.parser import DocumentParser
@@ -67,21 +68,7 @@ class DeepDiveAgent(BaseAgent):
         task_id = step.task_id
         urls = self._get_source_urls_for_task(task_id)
         if not urls:
-            import time
-            delays = [5, 10, 20, 30, 60]
-            for attempt, delay in enumerate(delays, start=1):
-                logger.info(
-                    "Waiting for sources to appear in KG",
-                    extra={"step_id": step.id, "attempt": attempt, "wait_seconds": delay},
-                )
-                time.sleep(delay)
-                urls = self._get_source_urls_for_task(task_id)
-                if urls:
-                    logger.info(
-                        "Sources found after waiting",
-                        extra={"step_id": step.id, "attempt": attempt, "count": len(urls)},
-                    )
-                    break
+            urls = self._wait_for_sources(task_id, step.id)
             if not urls:
                 logger.info("No sources to deep-dive after waiting", extra={"step_id": step.id})
                 return []
@@ -134,6 +121,46 @@ class DeepDiveAgent(BaseAgent):
 
         return self._emit_facts(step, [*all_claims, *all_sources])
 
+    def _wait_for_sources(self, task_id: str, _step_id: int) -> list[str]:
+        import time
+
+        import redis as redis_lib
+
+        from argus.shared.config import settings
+
+        try:
+            r = redis_lib.from_url(settings.redis_url, socket_connect_timeout=2)
+        except Exception:
+            time.sleep(5)
+            return self._get_source_urls_for_task(task_id)
+
+        deadline = time.time() + 135
+        last_id = "0"
+        stream = f"progress:{task_id}"
+        try:
+            while time.time() < deadline:
+                remaining = int((deadline - time.time()) * 1000)
+                if remaining <= 0:
+                    break
+                try:
+                    raw = r.xread({stream: last_id}, count=10, block=min(remaining, 5000))
+                except Exception:
+                    time.sleep(1)
+                    continue
+                if raw:
+                    for entry in raw:
+                        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                            continue
+                        for msg_entry in entry[1]:
+                            if isinstance(msg_entry, (list, tuple)) and len(msg_entry) >= 2:
+                                last_id = msg_entry[0]
+                urls = self._get_source_urls_for_task(task_id)
+                if urls:
+                    return urls
+            return []
+        finally:
+            r.close()
+
     def _get_source_urls_for_task(self, task_id: str) -> list[str]:
         import sqlite3
         try:
@@ -175,8 +202,6 @@ class DeepDiveAgent(BaseAgent):
         except RuntimeError:
             logger.warning("Batch extraction failed, falling back to single-source")
             return self._extract_single(batch, task_id, query=query)
-
-        from argus.services.agents._parse import extract_json_array
 
         try:
             raw_claims: list[dict[str, Any]] = extract_json_array(response_text)
@@ -230,8 +255,6 @@ class DeepDiveAgent(BaseAgent):
                     prompt=single_prompt,
                 )
                 self._record_cost(cost, category="llm")
-
-                from argus.services.agents._parse import extract_json_array
 
                 raw = extract_json_array(text)
                 if isinstance(raw, dict):

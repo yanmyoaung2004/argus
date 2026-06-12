@@ -78,6 +78,17 @@ CREATE TRIGGER IF NOT EXISTS claims_ai AFTER INSERT ON claims BEGIN
         (SELECT name FROM entities WHERE id = new.entity_id), ''
     ));
 END;
+
+CREATE TRIGGER IF NOT EXISTS claims_ad AFTER DELETE ON claims BEGIN
+    INSERT INTO claims_fts(claims_fts, rowid, statement, entity_name)
+    VALUES ('delete', old.id, old.statement, '');
+END;
+
+CREATE TRIGGER IF NOT EXISTS entity_name_update AFTER UPDATE OF name ON entities
+BEGIN
+    UPDATE claims_fts SET entity_name = new.name
+    WHERE rowid IN (SELECT id FROM claims WHERE entity_id = new.id);
+END;
 """
 
 

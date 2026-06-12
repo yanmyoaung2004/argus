@@ -16,18 +16,21 @@ class LLMCache:
 
     def _get_db(self) -> Any:  # noqa: ANN401
         conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(self._db_path, check_same_thread=False)
-            conn.execute(
-                """CREATE TABLE IF NOT EXISTS llm_cache (
-                    prompt_hash TEXT PRIMARY KEY,
-                    prompt TEXT NOT NULL,
-                    response TEXT NOT NULL,
-                    model TEXT NOT NULL,
-                    created_at REAL NOT NULL
-                )"""
-            )
-            self._local.conn = conn
+        if conn is not None:
+            return conn
+        conn = sqlite3.connect(self._db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS llm_cache (
+                prompt_hash TEXT PRIMARY KEY,
+                prompt TEXT NOT NULL,
+                response TEXT NOT NULL,
+                model TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )"""
+        )
+        conn.commit()
+        self._local.conn = conn
         return conn
 
     def _hash_prompt(self, prompt: str, model: str) -> str:

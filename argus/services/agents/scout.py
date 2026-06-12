@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any
 
+from argus.services.agents._parse import extract_json_array
 from argus.services.agents.base import BaseAgent
 from argus.services.tools.search import WebSearch
 from argus.shared.models import AgentType, Entity, Fact, Source, TaskStep
@@ -129,7 +130,6 @@ class ScoutAgent(BaseAgent):
             )
             self._record_cost(cost, category="llm")
 
-            from argus.services.agents._parse import extract_json_array
             result: list[dict[str, Any]] = extract_json_array(text)
             return [
                 item for item in result

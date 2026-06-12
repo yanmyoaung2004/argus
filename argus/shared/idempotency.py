@@ -25,17 +25,16 @@ class IdempotencyChecker:
         self._db_path = db_path or settings.sqlite_path
         self._lock = threading.Lock()
         self._local: threading.local = threading.local()
-        self._connections: list[sqlite3.Connection] = []
 
     def _get_conn(self) -> sqlite3.Connection:
         conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(self._db_path)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            self._local.conn = conn
-            self._connections.append(conn)
-            self._ensure_table(conn)
+        if conn is not None:
+            return conn
+        conn = sqlite3.connect(self._db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        self._ensure_table(conn)
+        self._local.conn = conn
         return conn
 
     def _ensure_table(self, conn: sqlite3.Connection) -> None:
@@ -87,10 +86,10 @@ class IdempotencyChecker:
             return cursor.rowcount
 
     def close(self) -> None:
-        for conn in self._connections:
+        conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
+        if conn is not None:
             conn.close()
-        self._connections.clear()
-        self._local.conn = None
+            self._local.conn = None
 
     @staticmethod
     def _hash(key: str) -> str:

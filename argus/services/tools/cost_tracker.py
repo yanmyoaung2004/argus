@@ -5,7 +5,6 @@ import time
 from typing import Any
 
 import redis as redis_lib
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from argus.shared.config import settings
 
@@ -47,13 +46,6 @@ class CostTracker:
     def _redis_key(self) -> str:
         return f"{self.REDIS_KEY_PREFIX}{self.task_id}"
 
-    @retry(
-        stop=stop_after_attempt(settings.llm_retry_max_attempts),
-        wait=wait_exponential(
-            multiplier=settings.llm_retry_min_wait_seconds,
-            max=settings.llm_retry_max_wait_seconds,
-        ),
-    )
     def get_total_cost(self) -> float:
         r = self._get_redis()
         if r is None:
@@ -67,13 +59,6 @@ class CostTracker:
             pass
         return 0.0
 
-    @retry(
-        stop=stop_after_attempt(settings.llm_retry_max_attempts),
-        wait=wait_exponential(
-            multiplier=settings.llm_retry_min_wait_seconds,
-            max=settings.llm_retry_max_wait_seconds,
-        ),
-    )
     def record_cost(self, amount: float, category: str = "llm") -> float:
         r = self._get_redis()
         if r is None:

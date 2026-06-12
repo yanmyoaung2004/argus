@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from argus.llm.circuit_breaker import ProviderCircuitBreaker
+from argus.llm.compressor import compress_prompt
 from argus.llm.profile import load_profile
 from argus.llm.provider_config import load_settings
 from argus.llm.providers import (
@@ -252,8 +253,13 @@ class CostAwareRouter:
             is_assigned = assigned and provider_type == assigned[0][0]
             if is_assigned and model_override:
                 call_kwargs["model_override"] = model_override
+
+            # Compress prompt for providers that benefit from it
+            compressed_prompt = compress_prompt(prompt, provider_type)
             try:
-                response = provider.complete(prompt, system_prompt=system_prompt, **call_kwargs)
+                response = provider.complete(
+                    compressed_prompt, system_prompt=system_prompt, **call_kwargs
+                )
                 breaker.record_success()
                 if self._cache is not None:
                     try:

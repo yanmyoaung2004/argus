@@ -5,6 +5,7 @@ import logging
 import sqlite3
 from typing import Any
 
+from argus.services.agents._parse import extract_json_object
 from argus.services.agents.base import BaseAgent
 from argus.shared.models import AgentType, Fact, TaskStep
 
@@ -30,25 +31,11 @@ class VerificationAgent(BaseAgent):
     async def run(self, step: TaskStep) -> list[Fact]:
         logger.info("VerificationAgent running", extra={"step_id": step.id, "goal": step.goal})
 
-        self._query = getattr(step, "query", "")
+        self._query: str = step.query or ""
 
         claims = self._get_claims_for_task(step.task_id)
         if not claims:
-            import time
-            delays = [5, 10, 20, 40, 60]
-            for attempt, delay in enumerate(delays, start=1):
-                logger.info(
-                    "Waiting for claims to appear in KG",
-                    extra={"step_id": step.id, "attempt": attempt, "wait_seconds": delay},
-                )
-                time.sleep(delay)
-                claims = self._get_claims_for_task(step.task_id)
-                if claims:
-                    logger.info(
-                        "Claims found after waiting",
-                        extra={"step_id": step.id, "attempt": attempt, "count": len(claims)},
-                    )
-                    break
+            claims = self._wait_for_claims(task_id=step.task_id, _step_id=step.id)
             if not claims:
                 logger.info("No claims to verify after waiting", extra={"step_id": step.id})
                 return []
@@ -95,13 +82,55 @@ class VerificationAgent(BaseAgent):
 
         return self._emit_facts(step, conflict_facts)
 
+    def _wait_for_claims(self, task_id: str, _step_id: int) -> list[dict[str, Any]]:
+        import time
+
+        import redis as redis_lib
+
+        from argus.shared.config import settings
+
+        try:
+            r = redis_lib.from_url(settings.redis_url, socket_connect_timeout=2)
+        except Exception:
+            time.sleep(5)
+            return self._get_claims_for_task(task_id)
+
+        deadline = time.time() + 135
+        last_id = "0"
+        stream = f"progress:{task_id}"
+        try:
+            while time.time() < deadline:
+                remaining = int((deadline - time.time()) * 1000)
+                if remaining <= 0:
+                    break
+                try:
+                    raw = r.xread({stream: last_id}, count=10, block=min(remaining, 5000))
+                except Exception:
+                    time.sleep(1)
+                    continue
+                if raw:
+                    for entry in raw:
+                        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                            continue
+                        for msg_entry in entry[1]:
+                            if isinstance(msg_entry, (list, tuple)) and len(msg_entry) >= 2:
+                                last_id = msg_entry[0]
+                claims = self._get_claims_for_task(task_id)
+                if claims:
+                    return claims
+            return []
+        finally:
+            r.close()
+
     def _get_claims_for_task(self, task_id: str) -> list[dict[str, Any]]:
         try:
             from argus.shared.config import settings
             conn = sqlite3.connect(settings.sqlite_path)
             rows = conn.execute(
-                "SELECT statement, confidence, source_urls, entity_name, attribute "
-                "FROM claims WHERE task_id = ? ORDER BY rowid",
+                "SELECT c.statement, c.confidence, c.source_urls, "
+                "COALESCE(e.name, 'unknown') AS entity_name, c.attribute "
+                "FROM claims c LEFT JOIN entities e ON c.entity_id = e.id "
+                "WHERE c.task_id = ? ORDER BY c.rowid",
                 (task_id,),
             ).fetchall()
             conn.close()
@@ -131,7 +160,7 @@ class VerificationAgent(BaseAgent):
         claim_a: dict[str, Any],
         claim_b: dict[str, Any],
     ) -> dict[str, Any] | None:
-        query_hint = getattr(self, "_query", "")
+        query_hint = self._query
         query_context = f"\nResearch context: {query_hint}\n" if query_hint else ""
         prompt = (
             f"Determine if the following two claims are contradictory, "
@@ -151,7 +180,6 @@ class VerificationAgent(BaseAgent):
             )
             self._record_cost(cost, category="llm")
 
-            from argus.services.agents._parse import extract_json_object
             result: dict[str, Any] = extract_json_object(text)
             relationship = result.get("relationship", "unrelated")
             reason = result.get("reason", "")
